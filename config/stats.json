@@ -1,0 +1,70 @@
+{
+  "balls": [
+    {
+      "id": 0,
+      "name": "red",
+      "kills": 0,
+      "wins": 0,
+      "losses": 0,
+      "eliminations": 0,
+      "lifeline_cuts": 0,
+      "collisions": 0,
+      "total_battles": 0
+    },
+    {
+      "id": 1,
+      "name": "blue",
+      "kills": 0,
+      "wins": 0,
+      "losses": 0,
+      "eliminations": 0,
+      "lifeline_cuts": 0,
+      "collisions": 0,
+      "total_battles": 0
+    },
+    {
+      "id": 2,
+      "name": "green",
+      "kills": 0,
+      "wins": 0,
+      "losses": 0,
+      "eliminations": 0,
+      "lifeline_cuts": 0,
+      "collisions": 0,
+      "total_battles": 0
+    },
+    {
+      "id": 3,
+      "name": "yellow",
+      "kills": 0,
+      "wins": 0,
+      "losses": 0,
+      "eliminations": 0,
+      "lifeline_cuts": 0,
+      "collisions": 0,
+      "total_battles": 0
+    },
+    {
+      "id": 4,
+      "name": "purple",
+      "kills": 0,
+      "wins": 0,
+      "losses": 0,
+      "eliminations": 0,
+      "lifeline_cuts": 0,
+      "collisions": 0,
+      "total_battles": 0
+    },
+    {
+      "id": 5,
+      "name": "orange",
+      "kills": 0,
+      "wins": 0,
+      "losses": 0,
+      "eliminations": 0,
+      "lifeline_cuts": 0,
+      "collisions": 0,
+      "total_battles": 0
+    }
+  ]
+}
