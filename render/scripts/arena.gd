@@ -88,7 +88,7 @@ func _draw_ring(r: float) -> void:
 func _draw_inner_circles(r: float) -> void:
 	# Concentric rings inside the arena; they brighten with the beat.
 	var alpha := 0.05 + 0.15 * _bump
-	for frac in [0.75, 0.5, 0.25]:
+	for frac in [0.9, 0.78]:
 		var pts := _circle_points(r * frac)
 		draw_polyline(pts, Color(CYAN.r, CYAN.g, CYAN.b, alpha), 1.5, true)
 

@@ -38,12 +38,12 @@ from typing import Dict, List, Optional, Tuple
 
 # --- tuning knobs ------------------------------------------------------------
 SPAWN_FRAC = 0.8               # spawn at this fraction of arena radius from centre
-SPEED = 130.0                  # px/s base ball speed (lively but not boring)
+SPEED = 130.0                  # px/s base ball speed (fast motion, ~1min via re-roll)
 SPEED_VARIATION = (0.8, 1.2)   # per-ball base-speed multiplier (stagger the rush)
 RESTORE_RATE = 2.5             # per second, speed recovers toward base speed (fast catch-up)
-START_RAMP_FLOOR = 0.2         # opening speed as a fraction of base (slow but gets going)
-SPEED_TAU = 45.0               # seconds - inverse-exponential ramp time constant
-MAX_SPEED_MULT = 3.5           # endgame speed multiplier (the ramp's asymptote)
+START_RAMP_FLOOR = 0.25        # opening speed as a fraction of base (gets going fast)
+SPEED_TAU = 35.0               # seconds - inverse-exponential ramp time constant
+MAX_SPEED_MULT = 4.0           # endgame speed multiplier (the ramp's asymptote)
 TO_CENTER_DEVIATION = math.radians(15)   # initial heading wobble around "aim at centre"
 BOUNCE_WOBBLE = math.radians(10)         # wall bounce angle wobble
 LIFELINE_INITIAL = 3           # starting strings per ball
