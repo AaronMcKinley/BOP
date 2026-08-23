@@ -9,6 +9,11 @@ var ball_id: int = 0:
 
 var lifelines: int = 3
 
+var kills: int = 0
+
+func ball_color() -> Color:
+	return COLORS[clampi(ball_id, 0, COLORS.size() - 1)]
+
 var lifeline_anchors: Array = []:
 	set(value):
 		lifeline_anchors = value
@@ -26,7 +31,7 @@ const COLORS: Array[Color] = [
 ]
 
 func _draw() -> void:
-	var c := COLORS[clampi(ball_id, 0, COLORS.size() - 1)]
+	var c := ball_color()
 	# Lifeline strings: lines from the ball out to each rim anchor.
 	for a in lifeline_anchors:
 		var anchor := Vector2(a[0], a[1])

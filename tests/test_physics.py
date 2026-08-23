@@ -79,8 +79,8 @@ def test_wall_bounce_reflects_inward():
     assert math.hypot(ball.x - ARENA.cx, ball.y - ARENA.cy) + BALL_RADIUS <= ARENA.radius + 1e-6
 
 
-def test_lifeline_growth_on_bounce_is_40_percent():
-    # From 3 strings, a bounce always adds ceil(3*0.4) = 2 (no jitter).
+def test_lifeline_growth_on_bounce_min_three():
+    # From 3 strings, a bounce adds max(3, ceil(3*0.6)) = 3.
     for seed in range(30):
         rng = random.Random(seed)
         ball = create_balls(rng, ARENA, BALL_RADIUS, 1)[0]
@@ -92,7 +92,7 @@ def test_lifeline_growth_on_bounce_is_40_percent():
         assert bounce_off_wall(rng, ball, ARENA)
         grow_lifelines(rng, ball, ARENA)
         grew = len(ball.lifelines) - before
-        assert grew == 2   # the user's rule: 3 strings -> +2
+        assert grew == 3   # the user's rule: min 3, ~60%
 
 
 def test_collision_does_not_grow_lifelines():
@@ -131,6 +131,7 @@ def test_ball_cuts_other_string():
     cut_lifelines(a, balls)
     assert len(o.lifelines) < before
     assert o.lifelines_cut == before - len(o.lifelines)
+    assert a.cuts_dealt == before - len(o.lifelines)   # the attacker scored those cuts
 
 
 def test_elastic_collision_equal_masses():

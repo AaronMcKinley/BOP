@@ -51,16 +51,31 @@ if __name__ == "__main__":
                         help="battle seed (default: fresh random seed)")
     parser.add_argument("--balls", type=int, default=5, help="number of balls (default 5)")
     parser.add_argument("--out", type=str, required=True, help="output events.json path")
+    parser.add_argument("--min-duration", type=float, default=0.0,
+                        help="when no --seed is given, re-roll seeds until the battle "
+                             "is at least this long (seconds)")
     args = parser.parse_args()
 
-    seed = args.seed if args.seed is not None else random.SystemRandom().randint(0, 2 ** 31)
-    events = simulate(seed, args.balls)
+    if args.seed is not None:
+        # An explicit seed is always respected.
+        events = simulate(args.seed, args.balls)
+    else:
+        # Fresh random seed each attempt; re-roll until the battle is long enough
+        # (the battle length varies wildly per seed, so this guarantees a usable one).
+        for _ in range(50):
+            seed = random.SystemRandom().randint(0, 2 ** 31)
+            events = simulate(seed, args.balls)
+            if events["duration_s"] >= args.min_duration:
+                break
+            print(f"battle too short ({events['duration_s']:.0f}s < {args.min_duration:.0f}s), re-rolling...")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(events, indent=1), encoding="utf-8")
+    # Compact JSON: with dense string webs these files can get large, and the
+    # indentation whitespace is pure overhead for the Godot parser.
+    out.write_text(json.dumps(events, separators=(",", ":")), encoding="utf-8")
 
-    print(f"seed={seed}  winner={events['winner']['ball_id']}  "
+    print(f"seed={events['seed']}  winner={events['winner']['ball_id']}  "
           f"duration={events['duration_s']}s  frames={len(events['frames'])}")
     print(f"eliminations={len(events['eliminations'])}  collisions={len(events['collisions'])}")
     print(f"wrote {out}")

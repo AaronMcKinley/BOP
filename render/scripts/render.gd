@@ -9,11 +9,21 @@ extends Node2D
 const Ball := preload("res://scripts/ball.gd")
 const BallScene := preload("res://scenes/ball.tscn")
 const JsonLoader := preload("res://scripts/json_loader.gd")
+const HUD := preload("res://scripts/hud.gd")
 const DEFAULT_EVENTS := "res://fixtures/sample_events.json"
+const BURST_LIFE := 0.6         # seconds a particle burst lives
+const SPARK_CYAN := Color(0.2, 0.9, 1.0)
 
 var _frames: Array = []
+var _events_data: Dictionary = {}
 var _balls := {}          # ball id -> Ball node
 var _frame_index := 0
+var _current_t := 0.0
+var _hud: CanvasLayer
+var _collision_idx := 0
+var _bounce_idx := 0
+var _elim_idx := 0
+var _bursts: Array = []   # [{node: CPUParticles2D, expires: float}]
 
 func _ready() -> void:
 	var events := JsonLoader.load_events(_events_path())
@@ -21,6 +31,7 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	_frames = events["frames"]
+	_events_data = events
 	# Spawn one ball node per id, using the first frame to learn the roster.
 	for frame: Dictionary in _frames:
 		for ball_data: Dictionary in frame["balls"]:
@@ -30,6 +41,10 @@ func _ready() -> void:
 				ball.ball_id = id
 				add_child(ball)
 				_balls[id] = ball
+	# Scoreboard strip at the bottom (kills scoreboard).
+	_hud = HUD.new()
+	add_child(_hud)
+	_hud.setup(_balls.values())
 
 func _process(_delta: float) -> void:
 	if _frame_index >= _frames.size():
@@ -37,6 +52,7 @@ func _process(_delta: float) -> void:
 		return
 	var frame: Dictionary = _frames[_frame_index]
 	_frame_index += 1
+	_current_t = frame["t"]
 	for ball_data: Dictionary in frame["balls"]:
 		var ball: Ball = _balls[int(ball_data["id"])] as Ball
 		ball.visible = ball_data["alive"]
@@ -44,6 +60,60 @@ func _process(_delta: float) -> void:
 		ball.lifelines = ball_data["lifelines"]
 		if ball_data.has("lifeline_anchors"):
 			ball.lifeline_anchors = ball_data["lifeline_anchors"]
+		ball.kills = int(ball_data.get("kills", 0))
+	_trigger_events(frame)
+	_purge_bursts()
+	_hud.refresh(_balls.values())
+
+func _trigger_events(frame: Dictionary) -> void:
+	# Fire particle bursts when battle events land on the current frame.
+	var t: float = frame["t"]
+	var colls: Array = _events_data.get("collisions", [])
+	while _collision_idx < colls.size() and float(colls[_collision_idx]["t"]) <= t:
+		var e: Dictionary = colls[_collision_idx]
+		_collision_idx += 1
+		var a: Ball = _balls[int(e["ball_a"])]
+		var b: Ball = _balls[int(e["ball_b"])]
+		var mid := (a.position + b.position) * 0.5
+		var impact: float = float(e.get("impact", 0.5))
+		_spawn_burst(mid, SPARK_CYAN, int(8 + 12 * impact), 120.0 + 140.0 * impact)
+	var bounces: Array = _events_data.get("wall_bounces", [])
+	while _bounce_idx < bounces.size() and float(bounces[_bounce_idx]["t"]) <= t:
+		var e: Dictionary = bounces[_bounce_idx]
+		_bounce_idx += 1
+		var ball: Ball = _balls[int(e["ball_id"])]
+		_spawn_burst(ball.position, ball.ball_color(), 6, 90.0)
+	var elims: Array = _events_data.get("eliminations", [])
+	while _elim_idx < elims.size() and float(elims[_elim_idx]["t"]) <= t:
+		var e: Dictionary = elims[_elim_idx]
+		_elim_idx += 1
+		var ball: Ball = _balls[int(e["ball_id"])]
+		_spawn_burst(ball.position, ball.ball_color(), 40, 260.0)
+
+func _spawn_burst(pos: Vector2, color: Color, count: int, speed: float) -> void:
+	var p := CPUParticles2D.new()
+	p.position = pos
+	p.amount = count
+	p.lifetime = BURST_LIFE
+	p.one_shot = true
+	p.explosiveness = 1.0
+	p.direction = Vector2.RIGHT
+	p.spread = 180.0
+	p.initial_velocity_min = speed * 0.25
+	p.initial_velocity_max = speed
+	p.gravity = Vector2.ZERO
+	p.scale_amount_min = 2.0
+	p.scale_amount_max = 5.0
+	p.color = color
+	p.emitting = true
+	add_child(p)
+	_bursts.append({"node": p, "expires": _current_t + BURST_LIFE + 0.05})
+
+func _purge_bursts() -> void:
+	for i in range(_bursts.size() - 1, -1, -1):
+		if _current_t >= float(_bursts[i]["expires"]):
+			(_bursts[i]["node"] as Node).queue_free()
+			_bursts.remove_at(i)
 
 func _events_path() -> String:
 	var args := OS.get_cmdline_user_args()

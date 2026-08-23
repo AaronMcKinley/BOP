@@ -21,8 +21,8 @@ MP4="$ROOT/output/renders/current.mp4"
 # Fresh output every run - no stale files.
 rm -f "$EVENTS" "$AVI" "$MP4"
 
-echo "== simulating battle (fresh random seed) =="
-.venv/bin/python simulation/simulate.py --balls 5 --out "$EVENTS"
+echo "== simulating battle (fresh random seed, re-rolling until >= 45s) =="
+.venv/bin/python simulation/simulate.py --balls 5 --min-duration 45 --out "$EVENTS"
 
 echo "== rendering (a window flashes; length = battle length) =="
 flatpak run org.godotengine.Godot --path "$ROOT/render" --resolution 540x960 \

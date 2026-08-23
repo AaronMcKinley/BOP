@@ -16,11 +16,10 @@ anchors on the arena rim. Rules:
     their own base speed each frame, faster the more lifelines they carry
   * each ball's base speed varies slightly, so the initial rush to the centre
     is staggered and the first clash doesn't wipe everyone at once
-  * the whole field starts at 50% speed, eases up to full over the opening
-    (START_RAMP_S), then keeps ACCELERATING to MAX_SPEED_MULT by FULL_RAMP_S -
-    the battle never coasts, it builds to a frantic endgame
-  * for the first CUT_GRACE_S seconds no strings can be cut - balls just build
-    up strings, so the first clash can't wipe the field
+  * the whole field's speed follows an inverse-exponential curve: a very slow
+    opening (~30% base) that accelerates fast and approaches MAX_SPEED_MULT -
+    slow and tense early, frantic by the endgame (this is what keeps the
+    opening calm - no grace period, strings can be cut from the first frame)
   * strings cap at MAX_LIFELINES (180), spaced one per degree around the rim -
     a thick web, but kept tidy (no clumping)
   * there is no battle time cap: it runs until one ball remains (re-run the
@@ -39,20 +38,18 @@ from typing import Dict, List, Optional, Tuple
 
 # --- tuning knobs ------------------------------------------------------------
 SPAWN_FRAC = 0.8               # spawn at this fraction of arena radius from centre
-SPEED = 150.0                  # px/s base ball speed
+SPEED = 130.0                  # px/s base ball speed (lively but not boring)
 SPEED_VARIATION = (0.8, 1.2)   # per-ball base-speed multiplier (stagger the rush)
-RESTORE_RATE = 0.8             # per second, speed recovers toward base speed
-START_RAMP_S = 20.0            # seconds to ease from the opening speed up to full
-START_RAMP_FLOOR = 0.5         # opening speed as a fraction of base (0.5 = half speed)
-FULL_RAMP_S = 90.0             # by this time the field reaches MAX_SPEED_MULT
-MAX_SPEED_MULT = 2.0           # endgame speed multiplier - the battle keeps accelerating
-CUT_GRACE_S = 12.0             # no string cutting for the first N seconds
+RESTORE_RATE = 2.5             # per second, speed recovers toward base speed (fast catch-up)
+START_RAMP_FLOOR = 0.2         # opening speed as a fraction of base (slow but gets going)
+SPEED_TAU = 45.0               # seconds - inverse-exponential ramp time constant
+MAX_SPEED_MULT = 3.5           # endgame speed multiplier (the ramp's asymptote)
 TO_CENTER_DEVIATION = math.radians(15)   # initial heading wobble around "aim at centre"
 BOUNCE_WOBBLE = math.radians(10)         # wall bounce angle wobble
 LIFELINE_INITIAL = 3           # starting strings per ball
-LIFELINE_GAIN_FRACTION = 0.4   # wall bounce grows strings by this x current count (ceil)
-MAX_GAIN_PER_BOUNCE = 10       # ... but never more than this per bounce, so late-game
-                               #    cutting can outpace regrowth and strings visibly thin
+LIFELINE_GAIN_FRACTION = 0.6   # wall bounce grows strings by this x current count (ceil)
+MIN_GAIN_PER_BOUNCE = 3        # ... but always at least this many per bounce
+MAX_GAIN_PER_BOUNCE = 10       # ... and never more than this per bounce
 LIFELINE_SPREAD = math.radians(10)       # anchor angle spread per cluster
 MAX_LIFELINES = 180            # strings cap: one per degree, max 180 (kept tidy)
 CUT_THRESHOLD = 5.0            # a string is cut when a ball comes within
@@ -87,6 +84,7 @@ class Ball:
     lifelines_cut: int = 0
     kills: int = 0
     last_cutter: Optional["Ball"] = None   # ball that cut the most recent string
+    cuts_dealt: int = 0        # successful string cuts this ball has dealt
 
 
 def create_balls(rng: random.Random, arena: Arena, radius: float, count: int,
@@ -110,9 +108,12 @@ def create_balls(rng: random.Random, arena: Arena, radius: float, count: int,
 
 
 def _init_lifelines(ball: Ball, arena: Arena) -> None:
-    """Three starting strings, spread across the rim arc directly behind the ball."""
+    """The starting strings, spread evenly across the rim arc directly behind
+    the ball (LIFELINE_INITIAL of them)."""
     radial = math.atan2(ball.y - arena.cy, ball.x - arena.cx)
-    for offset in (-LIFELINE_SPREAD, 0.0, LIFELINE_SPREAD):
+    for i in range(LIFELINE_INITIAL):
+        t = i / (LIFELINE_INITIAL - 1) if LIFELINE_INITIAL > 1 else 0.5
+        offset = -LIFELINE_SPREAD + 2.0 * LIFELINE_SPREAD * t
         a = radial + offset
         ball.lifelines.append((arena.cx + arena.radius * math.cos(a),
                                arena.cy + arena.radius * math.sin(a)))
@@ -151,7 +152,7 @@ def grow_lifelines(rng: random.Random, ball: Ball, arena: Arena) -> int:
     capped at MAX_GAIN_PER_BOUNCE. New strings go to fresh integer degree
     slots (one per degree) up to the MAX_LIFELINES cap, so the web stays
     tidy instead of clumping, and late-game growth can't outpace cutting."""
-    count = max(1, math.ceil(len(ball.lifelines) * LIFELINE_GAIN_FRACTION))
+    count = max(MIN_GAIN_PER_BOUNCE, math.ceil(len(ball.lifelines) * LIFELINE_GAIN_FRACTION))
     count = min(count, MAX_GAIN_PER_BOUNCE)
     used = _used_degrees(ball, arena)
     radial_deg = math.degrees(math.atan2(ball.y - arena.cy, ball.x - arena.cx)) % 360.0
@@ -230,15 +231,13 @@ def point_segment_dist(px: float, py: float, x1: float, y1: float,
 
 
 def ramp_speed_multiplier(t: float) -> float:
-    """Field-wide speed factor: 50% at t=0, easing up to 1.0 by START_RAMP_S,
-    then continuing to accelerate to MAX_SPEED_MULT by FULL_RAMP_S. The battle
-    never coasts - it builds to a frantic endgame, which also stops stalemates."""
-    if t <= START_RAMP_S:
-        return START_RAMP_FLOOR + (1.0 - START_RAMP_FLOOR) * (t / START_RAMP_S)
-    if t <= FULL_RAMP_S:
-        frac = (t - START_RAMP_S) / (FULL_RAMP_S - START_RAMP_S)
-        return 1.0 + (MAX_SPEED_MULT - 1.0) * frac
-    return MAX_SPEED_MULT
+    """Field-wide speed factor on an inverse-exponential curve:
+    mult(t) = FLOOR + (MAX - FLOOR) * (1 - e^(-t / SPEED_TAU)).
+
+    Very slow start, fast acceleration, levelling off toward MAX_SPEED_MULT -
+    a tense opening that rockets into a frantic endgame."""
+    frac = 1.0 - math.exp(-t / SPEED_TAU)
+    return START_RAMP_FLOOR + (MAX_SPEED_MULT - START_RAMP_FLOOR) * frac
 
 
 def restore_speed(rng: random.Random, ball: Ball, speed_mult: float = 1.0) -> None:
@@ -264,7 +263,7 @@ def restore_speed(rng: random.Random, ball: Ball, speed_mult: float = 1.0) -> No
 
 
 def cut_lifelines(attacker: Ball, others: List[Ball]) -> None:
-    """The attacker cuts any string of another ball that it passes close to."""
+    """The attacker cuts any string of another ball it passes close to."""
     cut_radius = attacker.radius - CUT_OFFSET
     for other in others:
         if other is attacker or not other.alive:
@@ -275,6 +274,7 @@ def cut_lifelines(attacker: Ball, others: List[Ball]) -> None:
             if d <= CUT_THRESHOLD + cut_radius:
                 other.lifelines_cut += 1
                 other.last_cutter = attacker
+                attacker.cuts_dealt += 1
             else:
                 remaining.append((ax, ay))
         other.lifelines = remaining
@@ -329,11 +329,11 @@ class Battle:
         for b in self.balls:
             if b.alive:
                 restore_speed(self.rng, b, speed_mult)
-        # Strings get cut by passing balls (after the opening grace period).
-        if self.time >= CUT_GRACE_S:
-            for b in self.balls:
-                if b.alive:
-                    cut_lifelines(b, self.balls)
+        # Strings get cut by passing balls (from the very first frame - the
+        # slow opening is what keeps things calm, not an immunity period).
+        for b in self.balls:
+            if b.alive:
+                cut_lifelines(b, self.balls)
         # Zero strings = eliminated.
         for b in self.balls:
             if b.alive and not b.lifelines:
@@ -364,6 +364,7 @@ class Battle:
             "y": round(b.y, 2),
             "lifelines": len(b.lifelines),
             "lifeline_anchors": [[round(p[0], 2), round(p[1], 2)] for p in b.lifelines],
+            "kills": b.kills,
             "alive": b.alive,
         } for b in self.balls]
 
@@ -374,4 +375,5 @@ class Battle:
             "collisions": b.collisions,
             "lifelines_created": b.lifelines_created,
             "lifelines_cut": b.lifelines_cut,
+            "cuts_dealt": b.cuts_dealt,
         } for b in self.balls}

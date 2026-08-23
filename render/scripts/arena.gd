@@ -1,12 +1,13 @@
 extends Node2D
-# R3: the decorative arena ring that pulses with the music.
+# R4: the decorative arena, Tron-style.
 #
-# It reads timeline.json directly (beats, bpm, energy_curve) and draws two
-# purely musical effects - the battle happens inside and this ring only reacts
-# to the track:
-#   * a beat bump: the ring swells on every beat, decaying smoothly after
-#   * a rotating surface wave: the ring edge undulates around its circumference,
-#     rotating at the beat rate (the smooth, organic "visualizer" feel)
+# It reads timeline.json directly (beats, bpm, energy_curve) and draws:
+#   * a neon cyan rim (layered glow) that swells on every beat
+#   * concentric inner circles that brighten with the beat
+#   * a shockwave ripple expanding outward from the rim on each beat
+#   * a faint full-screen grid background
+#
+# The battle balls move inside; this only reacts to the music.
 #
 # Usage: pass "--timeline path/to/timeline.json" after "--" to override the
 # default fixture at res://fixtures/timeline.json
@@ -16,11 +17,14 @@ const DEFAULT_TIMELINE := "res://fixtures/timeline.json"
 
 const CENTER := Vector2(540.0, 960.0)   # 1080x1920 design space
 const BASE_RADIUS := 380.0
-const BUMP_AMPLITUDE := 18.0    # px the ring swells on a strong beat
-const WAVE_AMPLITUDE := 14.0    # px of circumferential wave at full bump
+const BUMP_AMPLITUDE := 16.0    # px the rim swells on a strong beat
 const BUMP_DECAY := 3.5         # bump decays this fast per second
-const WAVE_SPIN := 0.5          # wave rotations per beat (0.5 = one per 2 beats)
+const RIPPLE_SPEED := 240.0     # px/s the shockwave expands outward
+const RIPPLE_LIFE := 2.0        # seconds a ripple lives before fading
+const GRID_SPACING := 120.0     # px between grid lines
 const SEGMENTS := 128
+
+const CYAN := Color(0.2, 0.9, 1.0)
 
 var beats: Array = []
 var energy_curve: Array = []    # [[t, e], ...] from timeline.json
@@ -29,7 +33,7 @@ var bpm := 0.0
 var _t := 0.0
 var _beat_index := 0
 var _bump := 0.0                # 0..1, re-triggered on each beat
-var _phase := 0.0               # rotating wave phase (radians)
+var _ripples: Array = []        # [{age: float}, ...]
 
 func _ready() -> void:
 	var timeline := JsonLoader.load_events(_timeline_path())
@@ -42,30 +46,67 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
-	# Trigger a bump on each new beat, scaled by the local energy.
+	# Trigger a bump + ripple on each new beat, scaled by the local energy.
 	while _beat_index < beats.size() and _t >= float(beats[_beat_index]):
 		_bump = 0.6 + 0.4 * _energy_at(float(beats[_beat_index]))
+		_ripples.append({"age": 0.0})
 		_beat_index += 1
-	# Decay the bump smoothly between beats.
 	_bump = maxf(_bump - delta * BUMP_DECAY, 0.0)
-	# Advance the surface wave at the beat rate so it feels locked to the music.
-	if bpm > 0.0:
-		_phase = fmod(_phase + delta * TAU * (bpm / 60.0) * WAVE_SPIN, TAU)
+	for r in _ripples:
+		r["age"] += delta
+	_ripples = _ripples.filter(func(r: Dictionary) -> bool: return r["age"] < RIPPLE_LIFE)
 	queue_redraw()
 
 func _draw() -> void:
-	var wave_amp := WAVE_AMPLITUDE * (0.2 + 0.8 * _bump)
-	var ring_r := BASE_RADIUS + BUMP_AMPLITUDE * _bump
-	var points := PackedVector2Array()
+	_draw_grid()
+	var bump_r := BASE_RADIUS + BUMP_AMPLITUDE * _bump
+	_draw_ring(bump_r)
+	_draw_inner_circles(bump_r)
+	_draw_ripples()
+
+func _draw_grid() -> void:
+	# Faint Tron-floor grid across the whole frame.
+	var col := Color(CYAN.r, CYAN.g, CYAN.b, 0.04)
+	var x := 0.0
+	while x <= 1080.0:
+		draw_line(Vector2(x, 0.0), Vector2(x, 1920.0), col, 1.0)
+		x += GRID_SPACING
+	var y := 0.0
+	while y <= 1920.0:
+		draw_line(Vector2(0.0, y), Vector2(1080.0, y), col, 1.0)
+		y += GRID_SPACING
+
+func _draw_ring(r: float) -> void:
+	# Layered neon cyan rim: soft outer glow down to a bright core.
+	var pts := _circle_points(r)
+	pts.append(pts[0])
+	draw_polyline(pts, Color(CYAN.r, CYAN.g, CYAN.b, 0.05), 22.0, true)
+	draw_polyline(pts, Color(CYAN.r, CYAN.g, CYAN.b, 0.12), 10.0, true)
+	draw_polyline(pts, Color(CYAN.r, CYAN.g, CYAN.b, 0.35), 3.5, true)
+	draw_polyline(pts, CYAN, 1.5, true)
+
+func _draw_inner_circles(r: float) -> void:
+	# Concentric rings inside the arena; they brighten with the beat.
+	var alpha := 0.05 + 0.15 * _bump
+	for frac in [0.75, 0.5, 0.25]:
+		var pts := _circle_points(r * frac)
+		draw_polyline(pts, Color(CYAN.r, CYAN.g, CYAN.b, alpha), 1.5, true)
+
+func _draw_ripples() -> void:
+	# Shockwaves expanding outward from the rim, fading as they go.
+	for r in _ripples:
+		var age: float = r["age"]
+		var radius := BASE_RADIUS + RIPPLE_SPEED * age
+		var alpha := maxf(0.0, 0.35 * (1.0 - age / RIPPLE_LIFE))
+		var pts := _circle_points(radius)
+		draw_polyline(pts, Color(CYAN.r, CYAN.g, CYAN.b, alpha), 2.0, true)
+
+func _circle_points(r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
 	for i in SEGMENTS:
 		var a := TAU * float(i) / SEGMENTS
-		var r := ring_r + wave_amp * sin(a * 2.0 + _phase)
-		points.append(CENTER + Vector2(r, 0.0).rotated(a))
-	points.append(points[0])  # close the loop so the stroke has no seam
-	# Layered neon ring: soft outer glow, mid pass, bright core.
-	draw_polyline(points, Color(1.0, 1.0, 1.0, 0.08), 20.0, true)
-	draw_polyline(points, Color(1.0, 1.0, 1.0, 0.25), 8.0, true)
-	draw_polyline(points, Color(1.0, 0.95, 0.85, 0.9), 2.5, true)
+		pts.append(CENTER + Vector2(r, 0.0).rotated(a))
+	return pts
 
 func _energy_at(t: float) -> float:
 	# Linear interpolation on the energy curve (assumed sorted by time).
@@ -90,3 +131,4 @@ func _timeline_path() -> String:
 		if args[i] == "--timeline":
 			return args[i + 1]
 	return DEFAULT_TIMELINE
+
