@@ -9,6 +9,11 @@ var ball_id: int = 0:
 
 var lifelines: int = 3
 
+var lifeline_anchors: Array = []:
+	set(value):
+		lifeline_anchors = value
+		queue_redraw()
+
 # Colors match the config/stats.json roster order (red, blue, green, yellow, purple, orange).
 # Typed as Array[Color] so indexing yields a Color (needed for type inference below).
 const COLORS: Array[Color] = [
@@ -22,6 +27,10 @@ const COLORS: Array[Color] = [
 
 func _draw() -> void:
 	var c := COLORS[clampi(ball_id, 0, COLORS.size() - 1)]
+	# Lifeline strings: lines from the ball out to each rim anchor.
+	for a in lifeline_anchors:
+		var anchor := Vector2(a[0], a[1])
+		draw_line(Vector2.ZERO, anchor - position, Color(c.r, c.g, c.b, 0.55), 3.0)
 	# Soft outer halo
 	draw_circle(Vector2.ZERO, 52.0, Color(c.r, c.g, c.b, 0.25))
 	# Solid body

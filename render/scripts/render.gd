@@ -42,6 +42,8 @@ func _process(_delta: float) -> void:
 		ball.visible = ball_data["alive"]
 		ball.position = Vector2(ball_data["x"], ball_data["y"])
 		ball.lifelines = ball_data["lifelines"]
+		if ball_data.has("lifeline_anchors"):
+			ball.lifeline_anchors = ball_data["lifeline_anchors"]
 
 func _events_path() -> String:
 	var args := OS.get_cmdline_user_args()
@@ -49,8 +51,3 @@ func _events_path() -> String:
 		if args[i] == "--events":
 			return args[i + 1]
 	return DEFAULT_EVENTS
-
-func _draw() -> void:
-	# Faint arena rim so the bounce boundary is visible while testing.
-	# R3 replaces this with the real glowing arena.
-	draw_arc(Vector2(540.0, 960.0), 380.0, 0.0, TAU, 128, Color(1.0, 1.0, 1.0, 0.15), 4.0)

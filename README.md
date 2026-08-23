@@ -11,7 +11,7 @@ song.mp3
 analyze.py        (Python / librosa)
    │  → timeline.json
    │    beats, downbeats, tempo, energy envelope, bass-hit events,
-   │    section boundaries (intro / build / drop / breakdown / outro)
+   │    section boundaries (intro / build / drop / resolution)
    ▼
 simulate.py        (Python / numpy)
    │  → runs the physics headless, hundreds of seeds, no rendering
@@ -164,11 +164,42 @@ python postprocess/mux.py --video output/renders/track.mov --audio songs/track.m
 
 These two files are the entire interface between stages — keep them stable and everything downstream (or a future alternative renderer) can be swapped without touching the rest of the pipeline.
 
+## Music ↔ animation design
+
+The battle should feel like it's performing the track, not just playing over it.
+The music drives the animation at three levels:
+
+**1. Micro — beat-level motion.** Balls pulse on downbeats, the arena pulses with
+the energy curve, and collisions flash on bass hits. This puts the *feel* of the
+motion on the beat grid (`pulse_curve` + beat-aligned effects).
+
+**2. Meso — section-level rules (the crescendo maker).** The battle rules change
+with the song's structure. The lifeline economy is the throttle: when balls can
+grow strings, nobody dies; when strings get cut faster than they grow,
+eliminations happen.
+
+- **Intro** — calm: slow balls; balls gain lifelines on bounces (no deaths).
+- **Build** — speed ramps with the energy curve; lifeline gains slow, cuts start,
+  and the first eliminations trickle in.
+- **Drop** — full speed, lifeline gains at minimum, cuts at maximum, the arena
+  tightens → mass eliminations, chaos, the climax.
+- **Resolution** — the final duel → winner.
+
+(No breakdown/outro for now — the arc stays tight so the video stays short.)
+
+**3. Macro — scoring + seed selection (optional, deferred).** Run many seeds and
+keep the one whose arc best fits the song. Postponed until we know the emergent
+sim needs it.
+
+**Video length.** Short-form: target ~60 s, hard max ~2 min. The full battle runs
+its course, but `mux.py` cuts the posted video to a highlight window around the
+build → drop → winner arc.
+
 ## Status
 
-- [ ] `analyze.py` — beat/energy/section extraction
+- [x] `analyze.py` — beat/energy/section extraction → `timeline.json` (built: `beat_detect.py`, `energy.py`, `analyze.py`)
 - [ ] `physics.py` + `simulate.py` — headless sim, deterministic, seeded
-- [ ] `director.py` — timeline → parameter curves (speed ramp, pulse)
+- [ ] `director.py` — timeline → section-driven parameter curves (speed, lifeline economy, pulse)
 - [ ] `select.py` + `scoring.py` — multi-seed audition and best-fit selection
 - [ ] Godot scene: arena + ball template + glow/particles
 - [ ] `render.gd` — headless playback of events.json
