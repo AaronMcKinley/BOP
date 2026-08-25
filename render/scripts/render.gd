@@ -44,6 +44,13 @@ func _ready() -> void:
 				_balls[id] = ball
 	_arena = $Arena as ArenaScript
 
+	# Light-cycle spokes rotate one full turn per beat when the arena knows the
+	# song's BPM (it loads the timeline); otherwise balls keep their default spin.
+	var bpm: float = _arena.bpm
+	if bpm > 0.0:
+		for ball: Ball in _balls.values():
+			ball.spoke_speed = TAU * bpm / 60.0
+
 func _process(_delta: float) -> void:
 	if _frame_index >= _frames.size():
 		# Battle is over - play the winner reveal + league table, then finish.

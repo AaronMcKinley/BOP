@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
-"""publish_battle.py: promote a rendered battle to the publish folder + update stats.
+"""save.py: save the last created battle (video + events + stats).
 
-Run scripts/dev_render.sh first and watch the result. If the battle is a
-keeper, run this second script: it MOVES the video into
-output/publish/<song-name>/ (battle number auto-increments, never overwrites),
-writes its metadata, updates the season leaderboard (config/stats.json), and
-records the battle's seed in config/used_seeds.json so the same battle is
-never simulated again. Only the newest --max videos per song are kept.
-
-The publish folder is the staging area for the later "save as draft" step on
-social channels.
+The create script (scripts/create.sh) leaves its outputs at
+output/renders/current.mp4 and output/events/current.json. Running this with
+no arguments picks those up, moves the video into
+output/publish/<song>/battle_<n>.mp4 (auto-incremented, never overwrites),
+writes battle_<n>.json metadata, updates the season leaderboard
+(config/stats.json), and records the seed in config/used_seeds.json so the
+same battle is never created again.
 
 Usage:
-  python scripts/publish_battle.py --video output/renders/current.mp4 \
-      --events output/events/current.json --song MONODY-BIMONTE-REMIX
+  python scripts/save.py                # save the last created battle
+  python scripts/save.py --song OTHER   # publish under a different song name
 """
 
 import argparse
@@ -26,11 +24,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from simulation.scoring import battle_points, finishing_positions
-from simulation.seed_registry import DEFAULT_PATH as USED_SEEDS_FILE, record_seed
+from simulation.scoring import POINTS, battle_points, finishing_positions
+from simulation.seed_registry import (
+    DEFAULT_PATH as USED_SEEDS_FILE,
+    load_used_seeds,
+    record_seed,
+)
 
 STATS_FILE = ROOT / "config" / "stats.json"
 PUBLISH_ROOT = ROOT / "output" / "publish"
+DEFAULT_VIDEO = ROOT / "output" / "renders" / "current.mp4"
+DEFAULT_EVENTS = ROOT / "output" / "events" / "current.json"
+# Song used by the create script; keep the two in sync when a new song arrives.
+DEFAULT_SONG = "MONODY-BIMONTE-REMIX"
 DEFAULT_MAX_PER_SONG = 10
 SEASON = 1
 
@@ -45,12 +51,15 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-
 def main():
-    parser = argparse.ArgumentParser(description="Promote a battle to publish + update stats.")
-    parser.add_argument("--video", required=True, help="the mp4 you just rendered and liked")
-    parser.add_argument("--events", required=True, help="events.json for this battle")
-    parser.add_argument("--song", required=True, help="song name (used for the publish folder)")
+    parser = argparse.ArgumentParser(
+        description="Save the last created battle to the publish folder + update stats.")
+    parser.add_argument("--video", default=str(DEFAULT_VIDEO),
+                        help="rendered mp4 (default output/renders/current.mp4)")
+    parser.add_argument("--events", default=str(DEFAULT_EVENTS),
+                        help="events.json for this battle (default output/events/current.json)")
+    parser.add_argument("--song", default=DEFAULT_SONG,
+                        help="song name for the publish folder (default MONODY-BIMONTE-REMIX)")
     parser.add_argument("--stats", default=str(STATS_FILE),
                         help="leaderboard json path (default config/stats.json)")
     parser.add_argument("--publish", default=str(PUBLISH_ROOT),
@@ -59,15 +68,25 @@ def main():
                         help="keep only this many newest videos per song (default 10)")
     parser.add_argument("--used-seeds", type=str, default=str(USED_SEEDS_FILE),
                         help="json list of seeds already used; the battle's seed is "
-                             "appended here so it is never re-rolled (default "
-                             "config/used_seeds.json)")
+                             "appended here so it is never created again "
+                             "(default config/used_seeds.json)")
     args = parser.parse_args()
 
     video = Path(args.video)
     if not video.exists():
-        sys.exit(f"publish_battle: video not found: {video}")
+        sys.exit(f"save: video not found: {video}\nRun scripts/create.sh first.")
+    events_path = Path(args.events)
+    if not events_path.exists():
+        sys.exit(f"save: events not found: {events_path}\nRun scripts/create.sh first.")
 
-    events = load_json(args.events)
+    events = load_json(events_path)
+
+    # Never save the same battle twice: the seed makes the sim deterministic,
+    # so saving it again would double-count the stats.
+    seed = events.get("seed")
+    if seed is not None and int(seed) in load_used_seeds(args.used_seeds):
+        sys.exit(f"save: seed {seed} was already saved (see {args.used_seeds}) - duplicate battle.")
+
     stats_file = Path(args.stats)
     publish_root = Path(args.publish)
     song_dir = publish_root / args.song
@@ -119,9 +138,7 @@ def main():
         ball["collisions"] = ball.get("collisions", 0) + bstats.get("collisions", 0)
     save_json(stats_file, stats)
 
-    # Record the battle's seed so a future simulate never re-rolls the same
-    # battle (deterministic sim -> same battle).
-    seed = events.get("seed")
+    # Record the battle's seed so a future create never rolls the same battle.
     if seed is not None and record_seed(int(seed), args.used_seeds):
         print(f"recorded seed {seed} in {args.used_seeds}")
 
@@ -131,7 +148,7 @@ def main():
         old.unlink()
         old.with_suffix(".json").unlink(missing_ok=True)
 
-    print(f"published {out_video}")
+    print(f"saved {out_video}")
     print(f"winner: {metadata['winner']}  points: {points}  duration: {metadata['duration_s']}s")
     print("\nLEADERBOARD (points):")
     for ball in sorted(stats["balls"], key=lambda b: -b.get("points", 0)):
@@ -142,3 +159,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

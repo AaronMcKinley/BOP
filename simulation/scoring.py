@@ -1,8 +1,8 @@
 """scoring.py: shared battle scoring - finishing positions, points, leaderboard.
 
 Used by simulate.py (to embed a provisional leaderboard into events.json so the
-rendered video can show the standings) and by publish_battle.py (to commit the
-same points for real).
+rendered video can show the standings) and by save.py (to commit the same
+points for real).
 """
 
 POINTS = {1: 4, 2: 3, 3: 2, 4: 1, 5: 0}

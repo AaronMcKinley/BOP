@@ -174,9 +174,13 @@ func _build_table_row(winner_id: int, row: Dictionary, before_pos: int, after_po
 	name.position = Vector2(392, 14)
 	r.add_child(name)
 
-	# Points with this battle's gain.
+	# Points: this battle's gain, then the new total ("+4 = 16") - clearer than
+	# "16 +4" about which number is which. A 0-gain row just shows the total.
 	var pts := Label.new()
-	pts.text = "%d  +%d" % [row["points"], row["delta"]]
+	var pts_text := "+%d = %d" % [row["delta"], row["points"]]
+	if int(row["delta"]) <= 0:
+		pts_text = "%d" % row["points"]
+	pts.text = pts_text
 	pts.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
 	pts.add_theme_font_size_override("font_size", 28)
 	pts.position = Vector2(580, 14)

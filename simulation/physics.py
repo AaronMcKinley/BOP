@@ -6,9 +6,9 @@ anchors on the arena rim. Rules:
   * balls spawn evenly around the rim, aimed at the centre with a small
     seeded deviation, and each starts with 3 lifelines pointing at the rim
     behind them
-  * every wall bounce grows the ball's lifelines by ~40% of its current count,
-    rounded up, at least 1, capped at MAX_GAIN_PER_BOUNCE per bounce -
-    e.g. 3 -> +2, 5 -> +2, 7 -> +3, 10 -> +4, 30 -> +10
+  * every wall bounce grows the ball's lifelines by ~60% of its current count,
+    rounded up, at least MIN_GAIN_PER_BOUNCE, capped at MAX_GAIN_PER_BOUNCE per
+    bounce - e.g. 3 -> +3, 7 -> +5, 10 -> +6, 20 -> +10
     (ball-ball collisions do NOT grow lifelines)
   * a ball that passes close to another ball's string cuts that string
   * zero lifelines = eliminated; last ball standing wins
@@ -16,8 +16,8 @@ anchors on the arena rim. Rules:
     their own base speed each frame, faster the more lifelines they carry
   * each ball's base speed varies slightly, so the initial rush to the centre
     is staggered and the first clash doesn't wipe everyone at once
-  * the whole field's speed follows an inverse-exponential curve: a very slow
-    opening (~30% base) that accelerates fast and approaches MAX_SPEED_MULT -
+  * the whole field's speed follows an inverse-exponential curve: a slow
+    opening (~25% base) that accelerates and approaches MAX_SPEED_MULT -
     slow and tense early, frantic by the endgame (this is what keeps the
     opening calm - no grace period, strings can be cut from the first frame)
   * strings cap at MAX_LIFELINES (180), spaced one per degree around the rim -
@@ -42,8 +42,10 @@ SPEED = 130.0                  # px/s base ball speed (fast motion, ~1min via re
 SPEED_VARIATION = (0.8, 1.2)   # per-ball base-speed multiplier (stagger the rush)
 RESTORE_RATE = 2.5             # per second, speed recovers toward base speed (fast catch-up)
 START_RAMP_FLOOR = 0.25        # opening speed as a fraction of base (gets going fast)
-SPEED_TAU = 35.0               # seconds - inverse-exponential ramp time constant
-MAX_SPEED_MULT = 4.0           # endgame speed multiplier (the ramp's asymptote)
+SPEED_TAU = 50.0               # seconds - inverse-exponential ramp time constant
+MAX_SPEED_MULT = 5.5           # endgame speed multiplier (the ramp's asymptote);
+                               #   rams the endgame up (~3.9x by 60s) without
+                               #   wrecking battle length (tuned by distribution)
 TO_CENTER_DEVIATION = math.radians(15)   # initial heading wobble around "aim at centre"
 BOUNCE_WOBBLE = math.radians(10)         # wall bounce angle wobble
 LIFELINE_INITIAL = 3           # starting strings per ball

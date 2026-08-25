@@ -3,8 +3,8 @@
 Both sides of the pipeline share this one file so a published seed is never
 simulated again:
 
-  * simulate.py        skips seeds already in the registry when rolling fresh
-  * publish_battle.py  records the seed when a battle is promoted
+  * simulate.py  skips seeds already in the registry when rolling fresh
+  * save.py      records the seed when a battle is saved
 
 The registry lives at config/used_seeds.json as a plain JSON list of ints.
 """

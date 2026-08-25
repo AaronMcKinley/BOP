@@ -6,7 +6,10 @@ import random
 import pytest
 
 from simulation.physics import (
+    LIFELINE_GAIN_FRACTION,
     LIFELINE_INITIAL,
+    MAX_GAIN_PER_BOUNCE,
+    MIN_GAIN_PER_BOUNCE,
     Arena,
     Battle,
     bounce_off_wall,
@@ -79,8 +82,9 @@ def test_wall_bounce_reflects_inward():
     assert math.hypot(ball.x - ARENA.cx, ball.y - ARENA.cy) + BALL_RADIUS <= ARENA.radius + 1e-6
 
 
-def test_lifeline_growth_on_bounce_min_three():
-    # From 3 strings, a bounce adds max(3, ceil(3*0.6)) = 3.
+def test_lifeline_growth_on_bounce_matches_rule():
+    # A bounce adds ceil(fraction x current count), clamped to
+    # [MIN_GAIN_PER_BOUNCE, MAX_GAIN_PER_BOUNCE].
     for seed in range(30):
         rng = random.Random(seed)
         ball = create_balls(rng, ARENA, BALL_RADIUS, 1)[0]
@@ -92,7 +96,10 @@ def test_lifeline_growth_on_bounce_min_three():
         assert bounce_off_wall(rng, ball, ARENA)
         grow_lifelines(rng, ball, ARENA)
         grew = len(ball.lifelines) - before
-        assert grew == 3   # the user's rule: min 3, ~60%
+        expected = min(MAX_GAIN_PER_BOUNCE,
+                       max(MIN_GAIN_PER_BOUNCE,
+                           math.ceil(LIFELINE_GAIN_FRACTION * before)))
+        assert grew == expected
 
 
 def test_collision_does_not_grow_lifelines():

@@ -33,11 +33,14 @@ const COLORS: Array[Color] = [
 const RADIUS := 38.0
 const BODY_DARK := Color(0.03, 0.05, 0.08)
 
+var spoke_speed := 2.5        # rad/s; render.gd sets it to 1 rev per beat (TAU * BPM / 60)
+
 var _spoke_angle := 0.0
 
 func _process(delta: float) -> void:
-	# The light-cycle spoke keeps rotating so the discs feel alive.
-	_spoke_angle = fmod(_spoke_angle + delta * 2.5, TAU)
+	# The light-cycle spoke keeps rotating so the discs feel alive. When the
+	# renderer knows the song's BPM it completes one full turn per beat.
+	_spoke_angle = fmod(_spoke_angle + delta * spoke_speed, TAU)
 	queue_redraw()
 
 func _draw() -> void:
@@ -46,6 +49,8 @@ func _draw() -> void:
 	for a in lifeline_anchors:
 		var anchor := Vector2(a[0], a[1])
 		draw_line(Vector2.ZERO, anchor - position, Color(c.r, c.g, c.b, 0.55), 3.0)
+		# Anchor dot on the rim, so the attachment point reads clearly.
+		draw_circle(anchor - position, 3.5, Color(c.r, c.g, c.b, 0.9))
 
 	# Layered glow so the disc reads against the dark arena.
 	draw_circle(Vector2.ZERO, RADIUS * 2.2, Color(c.r, c.g, c.b, 0.08))

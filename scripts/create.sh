@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# dev_render.sh: run a fresh battle end-to-end and play the result.
+# create.sh: run a fresh battle end-to-end and play the result.
 #
-#   simulate (fresh random seed) -> Godot render -> mux with music -> play
+#   simulate (fresh unused seed) -> Godot render -> mux with music -> play
 #
 # The video length is the battle length (it runs until one ball remains, plus
 # the winner screen). The window flashes during the render - Movie Maker needs
 # a real display.
 #
-# If you like the battle, promote it afterwards with scripts/publish_battle.py
-# (updates stats + moves it to the publish folder).
+# If you like the battle, save it afterwards with:
+#   python scripts/save.py
+# (moves it to the publish folder, updates stats, records the seed).
 #
-# Usage: ./scripts/dev_render.sh
+# Usage: ./scripts/create.sh
 
 set -euo pipefail
 
