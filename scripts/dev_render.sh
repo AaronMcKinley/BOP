@@ -3,8 +3,12 @@
 #
 #   simulate (fresh random seed) -> Godot render -> mux with music -> play
 #
-# The video length is the battle length (it runs until one ball remains).
-# The window flashes during the render - Movie Maker needs a real display.
+# The video length is the battle length (it runs until one ball remains, plus
+# the winner screen). The window flashes during the render - Movie Maker needs
+# a real display.
+#
+# If you like the battle, promote it afterwards with scripts/publish_battle.py
+# (updates stats + moves it to the publish folder).
 #
 # Usage: ./scripts/dev_render.sh
 
@@ -14,6 +18,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 SONG="$ROOT/songs/MONODY-BIMONTE-REMIX.wav"
+SONG_NAME="$(basename "$SONG" .wav)"
 EVENTS="$ROOT/output/events/current.json"
 AVI="$ROOT/output/renders/current.avi"
 MP4="$ROOT/output/renders/current.mp4"

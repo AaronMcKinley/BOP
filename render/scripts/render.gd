@@ -9,17 +9,18 @@ extends Node2D
 const Ball := preload("res://scripts/ball.gd")
 const BallScene := preload("res://scenes/ball.tscn")
 const JsonLoader := preload("res://scripts/json_loader.gd")
-const HUD := preload("res://scripts/hud.gd")
+const ArenaScript := preload("res://scripts/arena.gd")
+const WinnerScreen := preload("res://scripts/winner_screen.gd")
 const DEFAULT_EVENTS := "res://fixtures/sample_events.json"
 const BURST_LIFE := 0.6         # seconds a particle burst lives
-const SPARK_CYAN := Color(0.2, 0.9, 1.0)
 
 var _frames: Array = []
 var _events_data: Dictionary = {}
 var _balls := {}          # ball id -> Ball node
 var _frame_index := 0
 var _current_t := 0.0
-var _hud: CanvasLayer
+var _arena: ArenaScript
+var _winner_screen: WinnerScreen
 var _collision_idx := 0
 var _bounce_idx := 0
 var _elim_idx := 0
@@ -41,14 +42,15 @@ func _ready() -> void:
 				ball.ball_id = id
 				add_child(ball)
 				_balls[id] = ball
-	# Scoreboard strip at the bottom (kills scoreboard).
-	_hud = HUD.new()
-	add_child(_hud)
-	_hud.setup(_balls.values())
+	_arena = $Arena as ArenaScript
 
 func _process(_delta: float) -> void:
 	if _frame_index >= _frames.size():
-		get_tree().quit()
+		# Battle is over - play the winner reveal + league table, then finish.
+		if _winner_screen == null:
+			_show_winner_screen()
+		elif _winner_screen.is_done():
+			get_tree().quit()
 		return
 	var frame: Dictionary = _frames[_frame_index]
 	_frame_index += 1
@@ -63,7 +65,27 @@ func _process(_delta: float) -> void:
 		ball.kills = int(ball_data.get("kills", 0))
 	_trigger_events(frame)
 	_purge_bursts()
-	_hud.refresh(_balls.values())
+
+func _show_winner_screen() -> void:
+	# Clear the battle field - just the winner + table from here on.
+	for ball in _balls.values():
+		ball.visible = false
+	var winner_data: Dictionary = _events_data.get("winner", {})
+	if winner_data.is_empty():
+		get_tree().quit()
+		return
+	var wid: int = int(winner_data["ball_id"])
+	if not _balls.has(wid):
+		get_tree().quit()
+		return
+	var ball: Ball = _balls[wid]
+	var stats: Dictionary = _events_data.get("stats", {}).get(str(wid), {})
+	var leaderboard: Array = _events_data.get("leaderboard", [])
+	var leaderboard_before: Dictionary = _events_data.get("leaderboard_before", {})
+	var screen := WinnerScreen.new()
+	screen.setup(wid, ball.ball_color(), stats, leaderboard, leaderboard_before)
+	add_child(screen)
+	_winner_screen = screen
 
 func _trigger_events(frame: Dictionary) -> void:
 	# Fire particle bursts when battle events land on the current frame.
@@ -76,7 +98,9 @@ func _trigger_events(frame: Dictionary) -> void:
 		var b: Ball = _balls[int(e["ball_b"])]
 		var mid := (a.position + b.position) * 0.5
 		var impact: float = float(e.get("impact", 0.5))
-		_spawn_burst(mid, SPARK_CYAN, int(8 + 12 * impact), 120.0 + 140.0 * impact)
+		# Clash sparks blend the two balls' colors (red + blue = purple).
+		var mix := (a.ball_color() + b.ball_color()) * 0.5
+		_spawn_burst(mid, mix, int(8 + 12 * impact), 120.0 + 140.0 * impact)
 	var bounces: Array = _events_data.get("wall_bounces", [])
 	while _bounce_idx < bounces.size() and float(bounces[_bounce_idx]["t"]) <= t:
 		var e: Dictionary = bounces[_bounce_idx]
@@ -89,6 +113,10 @@ func _trigger_events(frame: Dictionary) -> void:
 		_elim_idx += 1
 		var ball: Ball = _balls[int(e["ball_id"])]
 		_spawn_burst(ball.position, ball.ball_color(), 40, 260.0)
+		# The arena rim + inner circles flash in the killer's color.
+		var killer_id := int(e.get("killer", -1))
+		if _balls.has(killer_id):
+			_arena.trigger_flash((_balls[killer_id] as Ball).ball_color())
 
 func _spawn_burst(pos: Vector2, color: Color, count: int, speed: float) -> void:
 	var p := CPUParticles2D.new()

@@ -191,17 +191,95 @@ eliminations happen.
 keep the one whose arc best fits the song. Postponed until we know the emergent
 sim needs it.
 
-**Video length.** Short-form: target ~60 s, hard max ~2 min. The full battle runs
-its course, but `mux.py` cuts the posted video to a highlight window around the
-build → drop → winner arc.
+**Video length.** Never force a fixed duration. The battle runs its course, the
+scoreboard resolves, and the music continues to a natural lull/break before the
+video ends - a video can be 45 s or 68 s depending on the track and battle. The
+music is never cut abruptly to hit an arbitrary length.
+
+## Scoring, leaderboard & seasons
+
+Every battle scores by finishing position (4/3/2/1/0: 1st 4, 2nd 3, 3rd 2, 4th 1,
+5th 0) and feeds a season leaderboard (`config/stats.json` already tracks wins,
+kills, etc. per ball). Seasons last ~2 months (~60 battles at one a day), each
+with its own visual theme - Season 1 is the neon/Tron-inspired look. Leaderboard
+data exists from day one even before any public website.
+
+## Video structure (the ending)
+
+1. Final kill lands on (or near) a beat
+2. 🏆 WINNER reveal - ~2.5 s
+3. Scoreboard - ~2.5-5 s: points awarded (39 → +4 → 43), position changes
+   animated, 👑 NEW LEADER when someone takes #1
+4. No more information
+5. The music continues to a natural lull/break
+6. Video ends there
+
+## Sudden Death
+
+The natural maximum for a long battle: at 1:30 all remaining balls drop to
+exactly 1 lifeline and can no longer grow strings. Movement and collisions
+continue normally, lifelines can still be cut, and the last ball standing wins.
+Triggered with a significant visual/musical transition (arena pulse, brief
+freeze/slowdown, title card, 1-lifeline indicators).
+
+## Procedural events
+
+Events are context-aware, not purely random: they only fire when the battle
+state AND the musical moment suit them (conditions, probability, musical
+suitability, cooldown, priority). Roughly 1-2 major events per video maximum.
+Events can branch - music section → battle state → eligibility → decision →
+event → new state → new opportunities - so different videos emerge organically
+without scripting. Examples: **1V1** (two balls remain + a musical break →
+freeze, camera push-in, "1V1", resume on the beat) and Sudden Death.
+
+## Announcer
+
+A pre-generated deep arcade/esports-style voice ("FINAL TWO", "SUDDEN DEATH",
+"ELIMINATED", "NEW LEADER", ...) placed at musically suitable beats - never
+generated per video. The AI makes the sound; BOP makes the timing. The music
+stays dominant (light ducking while the voice speaks).
+
+## Perceived speed
+
+Fast battles are short battles, so BOP makes motion *feel* fast instead of
+making it fast: motion trails, velocity glow, impact particles, camera
+movement/zoom, arena pulse, and progressive intensity. The battle has dynamic
+range - calm → build → drop → final duel - rather than maximum intensity the
+whole time.
+
+## Battle data
+
+Every battle saves its metadata for reproducibility and leaderboards: battle
+number, seed, season, track, BPM, events triggered, winner, points, duration.
+
+## Short battle handling
+
+Battles under 45 s are re-rolled for now (the dev pipeline already does this).
+Short-but-interesting seeds are kept for a future quality system that judges
+battles on more than duration: music sync, close finish, interaction density,
+event potential, visual interest.
+
+## Launch checklist
+
+Watermark, visual polish (particles, arena pulse, winner screen, scoreboard),
+automatic stats, music metadata/credits, leaderboard data, first batch of
+videos. Then **stop building and publish** - don't over-invest before there's an
+audience. Music licensing is tracked per track (source, permissions, credit
+requirements, date checked).
 
 ## Status
 
-- [x] `analyze.py` — beat/energy/section extraction → `timeline.json` (built: `beat_detect.py`, `energy.py`, `analyze.py`)
-- [ ] `physics.py` + `simulate.py` — headless sim, deterministic, seeded
-- [ ] `director.py` — timeline → section-driven parameter curves (speed, lifeline economy, pulse)
-- [ ] `select.py` + `scoring.py` — multi-seed audition and best-fit selection
-- [ ] Godot scene: arena + ball template + glow/particles
-- [ ] `render.gd` — headless playback of events.json
-- [ ] `mux.py` — ffmpeg mux/encode/export presets
+- [x] `analyze.py` — beat/energy/section extraction → `timeline.json`
+- [x] `physics.py` + `simulate.py` — deterministic battle sim → `events.json` (re-rolls for ≥45 s)
+- [ ] `director.py` — timeline → section-driven parameter curves + dynamic intensity
+- [x] Godot scene — neon arena, pulsing rings, grid, particles, KILLS scoreboard
+- [x] `render.gd` — data-driven playback of events.json
+- [x] `mux.py` — minimal ffmpeg mux/upscale/encode
+- [ ] Winner screen + scoreboard (points, positions, leaderboard)
+- [ ] Sudden Death rule + 1V1 event presentation
+- [ ] Announcer voice placement
+- [ ] Motion trails + camera movement (perceived speed)
+- [ ] Natural musical ending (breaks-based)
+- [ ] Battle metadata / leaderboard data saving
 - [ ] `run.py` — end-to-end orchestrator
+- [ ] Platform presets + loudness normalization in `mux.py`

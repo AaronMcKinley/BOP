@@ -1,6 +1,6 @@
 extends Node2D
-# R2: a ball node whose color comes from its ball_id.
-# R4 will replace this simple draw with the real glow/trail material.
+# R5: a ball rendered as a Tron-style disc - dark body, neon rim, rotating
+# light-cycle spoke, layered glow. The lifeline strings radiate to the rim.
 
 var ball_id: int = 0:
 	set(value):
@@ -30,15 +30,37 @@ const COLORS: Array[Color] = [
 	Color(1.0, 0.55, 0.15),  # 5 orange
 ]
 
+const RADIUS := 38.0
+const BODY_DARK := Color(0.03, 0.05, 0.08)
+
+var _spoke_angle := 0.0
+
+func _process(delta: float) -> void:
+	# The light-cycle spoke keeps rotating so the discs feel alive.
+	_spoke_angle = fmod(_spoke_angle + delta * 2.5, TAU)
+	queue_redraw()
+
 func _draw() -> void:
 	var c := ball_color()
 	# Lifeline strings: lines from the ball out to each rim anchor.
 	for a in lifeline_anchors:
 		var anchor := Vector2(a[0], a[1])
 		draw_line(Vector2.ZERO, anchor - position, Color(c.r, c.g, c.b, 0.55), 3.0)
-	# Soft outer halo
-	draw_circle(Vector2.ZERO, 52.0, Color(c.r, c.g, c.b, 0.25))
-	# Solid body
-	draw_circle(Vector2.ZERO, 38.0, c)
-	# Hot center highlight
-	draw_circle(Vector2.ZERO, 24.0, c.lightened(0.6))
+
+	# Layered glow so the disc reads against the dark arena.
+	draw_circle(Vector2.ZERO, RADIUS * 2.2, Color(c.r, c.g, c.b, 0.08))
+	draw_circle(Vector2.ZERO, RADIUS * 1.55, Color(c.r, c.g, c.b, 0.16))
+
+	# Dark Tron body.
+	draw_circle(Vector2.ZERO, RADIUS, BODY_DARK)
+
+	# Bright neon rim (outer) + softer inner glow ring.
+	draw_arc(Vector2.ZERO, RADIUS, 0.0, TAU, 48, c, 3.0, true)
+	draw_arc(Vector2.ZERO, RADIUS * 0.72, 0.0, TAU, 48, Color(c.r, c.g, c.b, 0.45), 1.5, true)
+
+	# Rotating light-cycle spoke.
+	var spoke := Vector2(RADIUS * 0.95, 0.0).rotated(_spoke_angle)
+	draw_line(Vector2.ZERO, spoke, Color(c.r, c.g, c.b, 0.85), 2.5)
+
+	# Hot center core.
+	draw_circle(Vector2.ZERO, 4.0, c.lightened(0.3))

@@ -55,6 +55,8 @@ MAX_LIFELINES = 180            # strings cap: one per degree, max 180 (kept tidy
 CUT_THRESHOLD = 5.0            # a string is cut when a ball comes within
 CUT_OFFSET = 15.0              #   threshold + ball radius - offset of it (28px reach)
 FPS = 60
+SUBSTEPS = 3                   # physics sub-steps per frame - precise collisions at
+                               #   endgame speeds (no ghosting/overlap)
 
 Point = Tuple[float, float]
 
@@ -296,33 +298,36 @@ class Battle:
         self._winner: Optional[int] = None
 
     def step(self, dt: float = 1.0 / FPS) -> None:
-        # Integrate positions.
-        for b in self.balls:
-            if not b.alive:
-                continue
-            b.x += b.vx * dt
-            b.y += b.vy * dt
-        # Wall bounces grow lifelines.
-        for b in self.balls:
-            if not b.alive:
-                continue
-            if bounce_off_wall(self.rng, b, self.arena):
-                grow_lifelines(self.rng, b, self.arena)
-                self.wall_bounces.append({"t": round(self.time, 3), "ball_id": b.id})
-        # Ball-ball collisions (no lifeline growth from these).
-        for i in range(len(self.balls)):
-            for j in range(i + 1, len(self.balls)):
-                a, o = self.balls[i], self.balls[j]
-                if not a.alive or not o.alive:
+        # Sub-step the motion + collisions so endgame speeds stay precise.
+        sub_dt = dt / SUBSTEPS
+        for _ in range(SUBSTEPS):
+            # Integrate positions.
+            for b in self.balls:
+                if not b.alive:
                     continue
-                impact = collide_balls(a, o)
-                if impact:
-                    self.collisions.append({
-                        "t": round(self.time, 3),
-                        "ball_a": a.id,
-                        "ball_b": o.id,
-                        "impact": round(min(1.0, impact / self.speed), 2),
-                    })
+                b.x += b.vx * sub_dt
+                b.y += b.vy * sub_dt
+            # Wall bounces grow lifelines.
+            for b in self.balls:
+                if not b.alive:
+                    continue
+                if bounce_off_wall(self.rng, b, self.arena):
+                    grow_lifelines(self.rng, b, self.arena)
+                    self.wall_bounces.append({"t": round(self.time, 3), "ball_id": b.id})
+            # Ball-ball collisions (no lifeline growth from these).
+            for i in range(len(self.balls)):
+                for j in range(i + 1, len(self.balls)):
+                    a, o = self.balls[i], self.balls[j]
+                    if not a.alive or not o.alive:
+                        continue
+                    impact = collide_balls(a, o)
+                    if impact:
+                        self.collisions.append({
+                            "t": round(self.time, 3),
+                            "ball_a": a.id,
+                            "ball_b": o.id,
+                            "impact": round(min(1.0, impact / self.speed), 2),
+                        })
         # Balls recover speed toward their (ramped) base speed. The ramp makes
         # the whole field ease from a slow opening up to full battle speed.
         speed_mult = ramp_speed_multiplier(self.time)
@@ -338,9 +343,15 @@ class Battle:
         for b in self.balls:
             if b.alive and not b.lifelines:
                 b.alive = False
+                killer_id: Optional[int] = None
                 if b.last_cutter is not None:
                     b.last_cutter.kills += 1
-                self.eliminations.append({"t": round(self.time, 3), "ball_id": b.id})
+                    killer_id = b.last_cutter.id
+                self.eliminations.append({
+                    "t": round(self.time, 3),
+                    "ball_id": b.id,
+                    "killer": killer_id,
+                })
         self.time += dt
 
     def is_over(self) -> bool:

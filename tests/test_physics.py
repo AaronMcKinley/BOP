@@ -150,6 +150,28 @@ def test_elastic_collision_equal_masses():
     assert o.vx == pytest.approx(100.0)
 
 
+def test_fast_collision_resolves_without_tunneling():
+    # At 6000 px/s a ball moves 100 px per frame - more than the 76 px ball
+    # diameter, so a single-step integrator would pass right through. The
+    # sub-stepped battle must detect the collision and bounce them apart.
+    rng = random.Random(11)
+    balls = create_balls(rng, ARENA, BALL_RADIUS, 2)
+    a, o = balls
+    a.x, a.y = ARENA.cx - 40.0, ARENA.cy
+    o.x, o.y = ARENA.cx + 40.0, ARENA.cy
+    a.vx, a.vy = 6000.0, 0.0
+    o.vx, o.vy = -6000.0, 0.0
+    battle = Battle(seed=11, arena=ARENA, num_balls=2)
+    battle.balls = balls
+    min_gap = float("inf")
+    for _ in range(2):
+        battle.step()
+        dist = math.hypot(a.x - o.x, a.y - o.y)
+        min_gap = min(min_gap, dist)
+    assert min_gap >= 2 * BALL_RADIUS - 1.0   # never tunneled through each other
+    assert a.vx < 0 and o.vx > 0               # they collided and bounced apart
+
+
 def test_battle_runs_to_winner():
     battle = run_battle(42, num_balls=5)
     assert battle.winner is not None

@@ -16,6 +16,23 @@ import sys
 from pathlib import Path
 
 WIDTH, HEIGHT = 1080, 1920   # platform-native short-form size
+# The render appends the end sequence (winner reveal + league table) after the
+# battle. The music fade starts when that sequence begins. END_SEQ_S must match
+# TOTAL_S in render/scripts/winner_screen.gd.
+END_SEQ_S = 8.5
+FADE_S = 6.0                 # audio taper length (runs over the end sequence)
+
+
+def _video_duration(path: Path) -> float:
+    """Duration of the rendered video (seconds), for the audio fade timing."""
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True)
+    try:
+        return float(result.stdout.strip())
+    except ValueError:
+        return 0.0
 
 
 def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0) -> None:
@@ -30,6 +47,15 @@ def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0) -> None:
     # at any point in the song (the director will pick a highlight window later).
     audio_args = ["-ss", str(offset_s)] if offset_s > 0 else []
 
+    # Fade the music out over the end sequence (winner screen) instead of
+    # cutting it hard. Exponential-sine curve gives a smooth "taper" rather
+    # than a linear cut.
+    duration = _video_duration(video)
+    afilter = None
+    if duration > FADE_S + 1.0:
+        fade_start = max(0.0, duration - END_SEQ_S)
+        afilter = f"afade=t=out:st={fade_start:.2f}:d={FADE_S}:curve=esin"
+
     cmd = [
         "ffmpeg", "-y",
         "-i", str(video),
@@ -39,6 +65,7 @@ def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0) -> None:
         "-c:v", "libx264", "-preset", "slow", "-crf", "18",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k",
+        *(["-af", afilter] if afilter else []),
         "-shortest",
         str(out),
     ]

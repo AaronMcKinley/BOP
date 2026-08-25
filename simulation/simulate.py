@@ -17,8 +17,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from simulation.physics import Arena, Battle
+from simulation.scoring import (
+    battle_points,
+    finishing_positions,
+    leaderboard_after,
+    leaderboard_current,
+)
+from simulation.seed_registry import DEFAULT_PATH as USED_SEEDS_FILE, load_used_seeds
 
 ARENA = Arena(cx=540.0, cy=960.0, radius=380.0)
+STATS_FILE = Path(__file__).resolve().parent.parent / "config" / "stats.json"
 
 
 def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0) -> dict:
@@ -29,7 +37,7 @@ def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0) -> dict:
         frames.append({"t": round(battle.time, 6), "balls": battle.frame_state()})
         battle.step()
 
-    return {
+    events = {
         "seed": seed,
         "fps": 60,
         "duration_s": round(battle.time, 3),
@@ -43,6 +51,25 @@ def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0) -> dict:
         "winner": {"ball_id": battle.winner, "t": round(battle.time, 3)},
         "stats": battle.stats(),
     }
+    # Scoring: finishing positions, points, and the standings before/after this
+    # battle (the end-of-video winner/table sequence reads these, and the table
+    # needs "before" to show who moved).
+    positions = finishing_positions(events)
+    points = battle_points(positions)
+    events["positions"] = positions
+    events["points"] = points
+    try:
+        with open(STATS_FILE, encoding="utf-8") as f:
+            stats = json.load(f)
+        events["leaderboard_before"] = {
+            r["id"]: r["position"] for r in leaderboard_current(stats)
+        }
+        events["leaderboard"] = leaderboard_after(stats, positions, points, events["stats"])
+    except (OSError, json.JSONDecodeError):
+        # Missing/broken stats file - the table just renders empty.
+        events["leaderboard_before"] = {}
+        events["leaderboard"] = []
+    return events
 
 
 if __name__ == "__main__":
@@ -54,16 +81,26 @@ if __name__ == "__main__":
     parser.add_argument("--min-duration", type=float, default=0.0,
                         help="when no --seed is given, re-roll seeds until the battle "
                              "is at least this long (seconds)")
+    parser.add_argument("--used-seeds", type=str, default=str(USED_SEEDS_FILE),
+                        help="json list of seeds already used; fresh rolls skip them "
+                             "(default config/used_seeds.json)")
     args = parser.parse_args()
 
+    used_seeds = set(load_used_seeds(args.used_seeds))
+
     if args.seed is not None:
-        # An explicit seed is always respected.
+        # An explicit seed is always respected, but warn if it was already used.
+        if args.seed in used_seeds:
+            print(f"WARNING: seed {args.seed} was already used (see {args.used_seeds})")
         events = simulate(args.seed, args.balls)
     else:
-        # Fresh random seed each attempt; re-roll until the battle is long enough
-        # (the battle length varies wildly per seed, so this guarantees a usable one).
+        # Fresh random seed each attempt; skip seeds already used in published
+        # battles, and re-roll until the battle is long enough (the battle length
+        # varies wildly per seed, so this guarantees a usable one).
         for _ in range(50):
             seed = random.SystemRandom().randint(0, 2 ** 31)
+            if seed in used_seeds:
+                continue
             events = simulate(seed, args.balls)
             if events["duration_s"] >= args.min_duration:
                 break
