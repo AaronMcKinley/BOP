@@ -16,12 +16,14 @@ anchors on the arena rim. Rules:
     their own base speed each frame, faster the more lifelines they carry
   * each ball's base speed varies slightly, so the initial rush to the centre
     is staggered and the first clash doesn't wipe everyone at once
-  * the whole field's speed follows an inverse-exponential curve: a slow
-    opening (~25% base) that accelerates and approaches MAX_SPEED_MULT -
-    slow and tense early, frantic by the endgame (this is what keeps the
-    opening calm - no grace period, strings can be cut from the first frame)
+  * the whole field's speed follows the song's energy curve when a timeline is
+    given (calm intro -> frantic drop -> eased breakdown), otherwise a slow
+    inverse-exponential ramp toward MAX_SPEED_MULT; the opening is always calm
+    (no grace period, strings can be cut from the first frame)
   * strings cap at MAX_LIFELINES (180), spaced one per degree around the rim -
     a thick web, but kept tidy (no clumping)
+  * sudden death at SUDDEN_DEATH_AT (90 s): from then on wall bounces stop
+    growing lifelines - the web can only shrink, so every battle must resolve
   * there is no battle time cap: it runs until one ball remains (re-run the
     dev script for a fresh seed if a run ever drags on)
 
@@ -59,6 +61,8 @@ CUT_OFFSET = 15.0              #   threshold + ball radius - offset of it (28px 
 FPS = 60
 SUBSTEPS = 3                   # physics sub-steps per frame - precise collisions at
                                #   endgame speeds (no ghosting/overlap)
+SUDDEN_DEATH_AT = 90.0         # at this time no NEW lifelines appear - the web can
+                               #   only shrink, so the battle must end by decay (1:30)
 
 Point = Tuple[float, float]
 
@@ -239,9 +243,39 @@ def ramp_speed_multiplier(t: float) -> float:
     mult(t) = FLOOR + (MAX - FLOOR) * (1 - e^(-t / SPEED_TAU)).
 
     Very slow start, fast acceleration, levelling off toward MAX_SPEED_MULT -
-    a tense opening that rockets into a frantic endgame."""
+    a tense opening that rockets into a frantic endgame. This is the fallback
+    for battles that have no energy curve (no timeline given)."""
     frac = 1.0 - math.exp(-t / SPEED_TAU)
     return START_RAMP_FLOOR + (MAX_SPEED_MULT - START_RAMP_FLOOR) * frac
+
+
+def _energy_at(t: float, energy_curve: List[List[float]]) -> float:
+    """Linear interpolation on the energy curve (assumed sorted by time)."""
+    if not energy_curve:
+        return 0.0
+    if t <= energy_curve[0][0]:
+        return energy_curve[0][1]
+    for i in range(len(energy_curve) - 1):
+        t0, e0 = energy_curve[i]
+        t1, e1 = energy_curve[i + 1]
+        if t0 <= t <= t1:
+            if t1 == t0:
+                return e0
+            return e0 + (e1 - e0) * (t - t0) / (t1 - t0)
+    return energy_curve[-1][1]
+
+
+def energy_speed_multiplier(t: float, energy_curve: List[List[float]]) -> float:
+    """Speed target follows the song's energy (0..1) from the calm floor up to
+    the frantic max - the intro drifts, the drop slams, the breakdown eases.
+
+    The energy is gated by the same slow-opening progress as the time ramp, so
+    the opening is always calm and the battle builds, while the song's shape
+    decides when it slams and when it eases."""
+    e = _energy_at(t, energy_curve)
+    e = max(0.0, min(1.0, e))
+    progress = 1.0 - math.exp(-t / SPEED_TAU)
+    return START_RAMP_FLOOR + (MAX_SPEED_MULT - START_RAMP_FLOOR) * progress * e
 
 
 def restore_speed(rng: random.Random, ball: Ball, speed_mult: float = 1.0) -> None:
@@ -297,9 +331,37 @@ class Battle:
         self.collisions: List[Dict] = []
         self.wall_bounces: List[Dict] = []
         self.eliminations: List[Dict] = []
+        # One-per-battle event log (written to events.json): sudden death is the
+        # first entry; immunity, walls, speed boosts and the musical drop slot
+        # into the same channel later.
+        self.events: List[Dict] = []
+        self.sudden_death_at: Optional[float] = SUDDEN_DEATH_AT   # None disables
+        self._sudden_death_active = False
+        # Event mechanics (set by simulation/events.py): a no-elimination
+        # window and a temporary field-speed surge.
+        self.immunity_until: float = 0.0     # no eliminations while time < this
+        self.speed_boost_until: float = 0.0  # field speed surge while time < this
+        self.speed_boost_mult: float = 1.5
+        # Music-driven speed: when a timeline's energy curve is supplied, the
+        # field speed follows the song instead of the time-based ramp.
+        self.energy_curve: List[List[float]] = []
+        self._speed_mult_smoothed: float = START_RAMP_FLOOR
         self._winner: Optional[int] = None
 
+    def _check_events(self) -> None:
+        """Emit one-time battle events as the fight progresses.
+
+        Sudden death (default 90 s): from this point wall bounces no longer
+        grow lifelines - the web can only shrink, so the battle must resolve by
+        decay. Called every step; each event fires exactly once.
+        """
+        if (not self._sudden_death_active and self.sudden_death_at is not None
+                and self.time >= self.sudden_death_at):
+            self._sudden_death_active = True
+            self.events.append({"type": "sudden_death", "t": self.sudden_death_at})
+
     def step(self, dt: float = 1.0 / FPS) -> None:
+        self._check_events()
         # Sub-step the motion + collisions so endgame speeds stay precise.
         sub_dt = dt / SUBSTEPS
         for _ in range(SUBSTEPS):
@@ -309,12 +371,13 @@ class Battle:
                     continue
                 b.x += b.vx * sub_dt
                 b.y += b.vy * sub_dt
-            # Wall bounces grow lifelines.
+            # Wall bounces grow lifelines (unless sudden death stopped growth).
             for b in self.balls:
                 if not b.alive:
                     continue
                 if bounce_off_wall(self.rng, b, self.arena):
-                    grow_lifelines(self.rng, b, self.arena)
+                    if not self._sudden_death_active:
+                        grow_lifelines(self.rng, b, self.arena)
                     self.wall_bounces.append({"t": round(self.time, 3), "ball_id": b.id})
             # Ball-ball collisions (no lifeline growth from these).
             for i in range(len(self.balls)):
@@ -332,7 +395,16 @@ class Battle:
                         })
         # Balls recover speed toward their (ramped) base speed. The ramp makes
         # the whole field ease from a slow opening up to full battle speed.
-        speed_mult = ramp_speed_multiplier(self.time)
+        if self.energy_curve:
+            target_mult = energy_speed_multiplier(self.time, self.energy_curve)
+        else:
+            target_mult = ramp_speed_multiplier(self.time)
+        # Smooth the target: the raw energy curve is noisy (10Hz samples) and
+        # the physics should pulse with the music, not jitter frame to frame.
+        self._speed_mult_smoothed += (target_mult - self._speed_mult_smoothed) * min(1.0, dt * 4.0)
+        speed_mult = self._speed_mult_smoothed
+        if self.time < self.speed_boost_until:
+            speed_mult *= self.speed_boost_mult
         for b in self.balls:
             if b.alive:
                 restore_speed(self.rng, b, speed_mult)
@@ -341,9 +413,9 @@ class Battle:
         for b in self.balls:
             if b.alive:
                 cut_lifelines(b, self.balls)
-        # Zero strings = eliminated.
+        # Zero strings = eliminated (immunity can delay this).
         for b in self.balls:
-            if b.alive and not b.lifelines:
+            if b.alive and not b.lifelines and self.time >= self.immunity_until:
                 b.alive = False
                 killer_id: Optional[int] = None
                 if b.last_cutter is not None:

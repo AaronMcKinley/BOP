@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -42,12 +43,30 @@ def _video_duration(path: Path) -> float:
         return 0.0
 
 
+def _nearest_lull(song_t: float, energy_curve: list, window: float = 3.0) -> float:
+    """Time of the quietest energy sample within +/-window seconds of song_t.
+
+    Used for the break-based ending: the music fades into a natural dip near
+    the winner screen instead of a fixed taper. Falls back to song_t itself if
+    no timeline is given (the curve is empty)."""
+    best_t, best_e = song_t, None
+    for t, e in energy_curve:
+        if abs(t - song_t) <= window:
+            if best_e is None or e < best_e:
+                best_e, best_t = e, t
+    return best_t
+
+
 def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0,
         watermark: str = WATERMARK_DEFAULT,
-        watermark_alpha: float = WATERMARK_ALPHA) -> None:
+        watermark_alpha: float = WATERMARK_ALPHA,
+        timeline_path: str = "") -> None:
     """Upscale the video, encode it, and mux the song starting at offset_s.
 
     watermark is faint brand text drawn on the frame background ('' = none).
+    timeline_path (optional) is the song's timeline.json; its energy curve is
+    used for a break-based ending - the music fades into a quiet lull near the
+    winner screen instead of a fixed taper.
     """
     if not video.exists():
         sys.exit(f"mux: video not found: {video}")
@@ -60,12 +79,22 @@ def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0,
     audio_args = ["-ss", str(offset_s)] if offset_s > 0 else []
 
     # Fade the music out over the end sequence (winner screen) instead of
-    # cutting it hard. Exponential-sine curve gives a smooth "taper" rather
-    # than a linear cut.
+    # cutting it hard. When the song's timeline is given, the fade lands on a
+    # detected lull so the winner screen sits in a natural dip.
     duration = _video_duration(video)
     afilter = None
     if duration > FADE_S + 1.0:
         fade_start = max(0.0, duration - END_SEQ_S)
+        if timeline_path:
+            try:
+                with open(timeline_path, encoding="utf-8") as f:
+                    energy_curve = json.load(f).get("energy_curve", [])
+            except (OSError, json.JSONDecodeError):
+                energy_curve = []
+            if energy_curve:
+                song_at_win = offset_s + (duration - END_SEQ_S)
+                lull = _nearest_lull(song_at_win, energy_curve)
+                fade_start = max(0.0, min(duration - 1.0, lull - offset_s - FADE_S * 0.5))
         afilter = f"afade=t=out:st={fade_start:.2f}:d={FADE_S}:curve=esin"
 
     # Upscale, then lay the faint watermark in the background below the arena
@@ -108,7 +137,10 @@ if __name__ == "__main__":
                              f"default '{WATERMARK_DEFAULT}')")
     parser.add_argument("--watermark-alpha", type=float, default=WATERMARK_ALPHA,
                         help="watermark opacity 0..1 (default 0.22)")
+    parser.add_argument("--timeline", type=str, default="",
+                        help="song timeline.json; its energy curve puts the end fade "
+                             "into a natural lull (break-based ending)")
     args = parser.parse_args()
 
     mux(Path(args.video), Path(args.audio), Path(args.out), args.offset,
-        args.watermark, args.watermark_alpha)
+        args.watermark, args.watermark_alpha, args.timeline)

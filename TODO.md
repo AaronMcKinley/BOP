@@ -17,17 +17,27 @@ voice overs.
 - [x] 6 balls rejected — kills the 60–90 s battles (max ~52 s vs ~71 s)
 - [ ] Re-render to judge the current feel: endgame speed + scoreboard `+4 = 16`
 
-## 2 · Sudden death cap — no battle overruns
+## 2 · Sudden death & the events channel
 
-- [ ] `SUDDEN_DEATH_AT` (~90 s): bounces stop growing lifelines from then on —
-      existing lifelines stay untouched (no forced 1-lifeline).
-- [ ] Battle resolves by decay from there (strings only ever get cut), so it
-      always ends soon after the cap.
-- [ ] New events.json field `sudden_death: {"t": ...}`; renderer shows a
-      "SUDDEN DEATH" banner + rim flash.
+- [x] `SUDDEN_DEATH_AT` 90 s: wall bounces stop growing lifelines from then on —
+      existing lifelines stay untouched (no forced 1-lifeline); the battle
+      resolves by decay, so it always ends soon after the cap
+- [x] `events.json` now carries an `events` array (one-per-battle log);
+      `{"type": "sudden_death", "t": 90.0}` is the first entry — immunity /
+      walls / speed boosts / the musical drop slot into the same channel later
+- [x] Event library (`simulation/events.py`): `sudden_death` / `immunity` /
+      `speed_boost` functions plus a `roll()` dispatcher. Off by default —
+      enable per battle with `./scripts/create.sh 0.5` (or `--event-chance`)
+- [ ] Renderer reaction: "SUDDEN DEATH" banner + rim flash when the event fires
+- [ ] Seed-fixing: decide how short seeds get handled — immunity / speed boost
+      already exist to call; walls + the musical drop to design
 
 ## 3 · Events & pacing — every seed makes a good video
 
+- [x] Energy-driven speed ramp: the field speed now follows the song's energy
+      curve (gated by the slow-opening progress) via `simulate.py --timeline` —
+      intro drifts, the drop slams, the breakdown eases. Bonus: 8/15 seeds
+      now ≥45 s (was 5/30)
 - [ ] Replace the crude "re-roll if < 45 s" with structured events so short
       seeds become long, interesting battles:
       - Opening buffer: no eliminations before ~15–20 s
@@ -61,8 +71,16 @@ voice overs.
 
 - [ ] Final kill lands on/near a beat (hold the last cut ≤ 0.5 s so the
       winner reveal lands on the beat)
-- [ ] Motion trails + camera movement/zoom + velocity glow
-- [ ] Watermark + music credits/metadata in the final video
+- [x] Break-based ending: mux.py finds a lull in the song's energy curve near
+      the winner screen and fades the music into it (`--timeline`)
+- [x] Drop impact: the renderer detects musical drops (sharp energy surges in
+      the timeline) and punches the camera — a jump + zoom-in that settles
+      over 0.4 s. The winner screen stays crisp (CanvasLayer)
+- [x] Ball glow rework: multi-layer emission halo (smaller, tighter falloff)
+      + motion streaks at full speed (endgame "burns")
+- [ ] Camera movement/zoom (sells the endgame speed further)
+- [x] Watermark on the final video (mux.py, faint BOP below the arena)
+- [ ] Music credits/metadata in the final video
 
 ## 6 · Postprocess & platform
 

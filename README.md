@@ -43,6 +43,8 @@ BOP/
 │   ├── simulate.py           # battle → events.json (fresh seed, ≥ 45 s)
 │   ├── scoring.py            # finishing positions, points, leaderboard math
 │   ├── seed_registry.py      # used-seed tracking (shared by simulate + save)
+│   ├── events.py             # battle-event library (sudden death, immunity,
+│   │                         #   speed boost) + roll() with a chance
 │   └── stats_manager.py      # leaderboard loading helpers
 ├── render/                   # Godot 4.7 project (run via flatpak)
 │   ├── project.godot  scenes/  fixtures/
@@ -106,6 +108,7 @@ stage can be swapped without touching the rest of the chain.
   "wall_bounces": [{"t": 1.41, "ball_id": 0}],
   "eliminations": [{"t": 12.7, "ball_id": 3}],
   "pulse_curve": [[0.0, 1.0], ...], "speed_curve": [[0.0, 0.2], ...],
+  "events": [{"type": "sudden_death", "t": 90.0}],
   "winner": {"ball_id": 1, "t": 47.6}, "stats": {...},
   "positions": {...}, "points": {...},
   "leaderboard_before": {...}, "leaderboard": [...]

@@ -9,13 +9,16 @@ from simulation.physics import (
     LIFELINE_GAIN_FRACTION,
     LIFELINE_INITIAL,
     MAX_GAIN_PER_BOUNCE,
+    MAX_SPEED_MULT,
     MIN_GAIN_PER_BOUNCE,
+    START_RAMP_FLOOR,
     Arena,
     Battle,
     bounce_off_wall,
     collide_balls,
     create_balls,
     cut_lifelines,
+    energy_speed_multiplier,
     grow_lifelines,
     restore_speed,
 )
@@ -186,3 +189,53 @@ def test_battle_runs_to_winner():
     assert winner_ball.alive
     stats = battle.stats()[battle.winner]
     assert stats["bounces"] > 0
+
+
+def test_energy_speed_multiplier_follows_curve():
+    curve = [[0.0, 0.0], [10.0, 0.5], [20.0, 1.0]]
+    low = energy_speed_multiplier(0.0, curve)
+    mid = energy_speed_multiplier(10.0, curve)
+    high = energy_speed_multiplier(1e9, curve)   # full build + max energy
+    assert low == pytest.approx(START_RAMP_FLOOR)    # calm intro
+    assert high == pytest.approx(MAX_SPEED_MULT)     # frantic at max energy
+    assert low < mid < high
+
+
+def test_battle_with_energy_curve_still_finishes():
+    # A battle driven by a music energy curve runs to a winner, deterministically.
+    curve = [[0.0, 0.3], [50.0, 0.9], [100.0, 0.4]]
+
+    def run():
+        battle = Battle(seed=42, arena=ARENA, ball_radius=BALL_RADIUS, num_balls=5)
+        battle.energy_curve = curve
+        while not battle.is_over() and battle.time < 200:
+            battle.step()
+        return battle
+
+    a, b = run(), run()
+    assert a.winner is not None
+    assert b.winner == a.winner   # same seed + curve -> same battle
+
+
+def test_sudden_death_emits_event_once():
+    battle = Battle(seed=5, arena=ARENA, ball_radius=BALL_RADIUS, num_balls=5)
+    assert battle._sudden_death_active is False
+    battle.time = battle.sudden_death_at   # exactly 90.0
+    battle._check_events()
+    assert battle._sudden_death_active is True
+    assert battle.events == [{"type": "sudden_death", "t": 90.0}]
+    battle._check_events()                  # fires exactly once
+    assert len(battle.events) == 1
+
+
+def test_sudden_death_stops_lifeline_growth():
+    # With sudden death active from frame one, no NEW lifelines are ever
+    # created - each ball keeps only its 3 starting strings.
+    battle = Battle(seed=7, arena=ARENA, ball_radius=BALL_RADIUS, num_balls=5)
+    battle.sudden_death_at = 0.0
+    while not battle.is_over() and battle.time < 200:
+        battle.step()
+    assert battle.winner is not None                      # resolves by decay
+    assert battle.events == [{"type": "sudden_death", "t": 0.0}]
+    total_created = sum(s["lifelines_created"] for s in battle.stats().values())
+    assert total_created == 5 * LIFELINE_INITIAL          # no growth, ever

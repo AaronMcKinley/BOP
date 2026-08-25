@@ -13,9 +13,11 @@ import json
 import random
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from simulation import events as battle_events
 from simulation.physics import Arena, Battle
 from simulation.scoring import (
     battle_points,
@@ -29,9 +31,45 @@ ARENA = Arena(cx=540.0, cy=960.0, radius=380.0)
 STATS_FILE = Path(__file__).resolve().parent.parent / "config" / "stats.json"
 
 
-def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0) -> dict:
-    """Run a battle to its end and return the events.json dict."""
+def detect_drops(energy_curve: list, min_rise: float = 0.3, min_gap: float = 6.0,
+                 window_s: float = 1.5) -> list:
+    """Musical drops: sharp low->high energy surges in the song.
+
+    A drop is an energy rise of at least `min_rise` over a ~`window_s` window
+    that lands at high energy. Returns the times (song seconds) of the surges,
+    at least `min_gap` seconds apart.
+    """
+    drops = []
+    if len(energy_curve) < 2:
+        return drops
+    dt = max(energy_curve[1][0] - energy_curve[0][0], 0.001)
+    n = max(1, int(round(window_s / dt)))
+    last_t = -min_gap
+    for i in range(n, len(energy_curve)):
+        t, e = energy_curve[i]
+        t0, e0 = energy_curve[i - n]
+        if t - last_t >= min_gap and e - e0 >= min_rise and e >= 0.45:
+            drops.append(round(t, 2))
+            last_t = t
+    return drops
+
+
+def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
+             event_chance: float = 0.0, energy_curve: Optional[list] = None) -> dict:
+    """Run a battle to its end and return the events.json dict.
+
+    event_chance is the probability a random battle event fires (immunity /
+    speed boost); 0 (default) disables random events entirely. Sudden death
+    stays as the scheduled 90 s backstop either way.
+
+    energy_curve (from the song's timeline) drives the field speed: the battle
+    drifts in the intro, slams at the drop, eases in the breakdown. Without it
+    the speed follows the plain time-based ramp.
+    """
     battle = Battle(seed=seed, arena=ARENA, ball_radius=ball_radius, num_balls=num_balls)
+    if energy_curve:
+        battle.energy_curve = energy_curve
+    battle_events.roll(battle, battle.rng, chance=event_chance)
     frames = []
     while not battle.is_over():
         frames.append({"t": round(battle.time, 6), "balls": battle.frame_state()})
@@ -50,7 +88,19 @@ def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0) -> dict:
         "speed_curve": [[0.0, 1.0], [round(battle.time, 3), 1.0]],
         "winner": {"ball_id": battle.winner, "t": round(battle.time, 3)},
         "stats": battle.stats(),
+        # One-per-battle event log: sudden death (90 s, stops lifeline growth)
+        # and musical drops (the renderer punches the camera on each) slot into
+        # the same channel as immunity / walls / speed boosts.
+        "events": battle.events,
     }
+    # Musical drops: sharp low->high energy surges in the song. The renderer
+    # reacts to each with a camera jump + zoom, so the drop feels part of the
+    # action. Only drops that land before the battle ends matter.
+    if energy_curve:
+        drops = [{"type": "drop", "t": t} for t in detect_drops(energy_curve)
+                 if t <= battle.time]
+        if drops:
+            events["events"] = sorted(battle.events + drops, key=lambda e: e["t"])
     # Scoring: finishing positions, points, and the standings before/after this
     # battle (the end-of-video winner/table sequence reads these, and the table
     # needs "before" to show who moved).
@@ -84,15 +134,27 @@ if __name__ == "__main__":
     parser.add_argument("--used-seeds", type=str, default=str(USED_SEEDS_FILE),
                         help="json list of seeds already used; fresh rolls skip them "
                              "(default config/used_seeds.json)")
+    parser.add_argument("--event-chance", type=float, default=0.0,
+                        help="probability a random battle event fires (0 = none, "
+                             "default 0)")
+    parser.add_argument("--timeline", type=str, default="",
+                        help="song timeline.json; its energy curve drives the field "
+                             "speed (default: time-based ramp)")
     args = parser.parse_args()
 
     used_seeds = set(load_used_seeds(args.used_seeds))
+
+    energy_curve = None
+    if args.timeline:
+        with open(args.timeline, encoding="utf-8") as f:
+            energy_curve = json.load(f).get("energy_curve", [])
 
     if args.seed is not None:
         # An explicit seed is always respected, but warn if it was already used.
         if args.seed in used_seeds:
             print(f"WARNING: seed {args.seed} was already used (see {args.used_seeds})")
-        events = simulate(args.seed, args.balls)
+        events = simulate(args.seed, args.balls, event_chance=args.event_chance,
+                          energy_curve=energy_curve)
     else:
         # Fresh random seed each attempt; skip seeds already used in published
         # battles, and re-roll until the battle is long enough (the battle length
@@ -101,7 +163,8 @@ if __name__ == "__main__":
             seed = random.SystemRandom().randint(0, 2 ** 31)
             if seed in used_seeds:
                 continue
-            events = simulate(seed, args.balls)
+            events = simulate(seed, args.balls, event_chance=args.event_chance,
+                              energy_curve=energy_curve)
             if events["duration_s"] >= args.min_duration:
                 break
             print(f"battle too short ({events['duration_s']:.0f}s < {args.min_duration:.0f}s), re-rolling...")
@@ -115,4 +178,6 @@ if __name__ == "__main__":
     print(f"seed={events['seed']}  winner={events['winner']['ball_id']}  "
           f"duration={events['duration_s']}s  frames={len(events['frames'])}")
     print(f"eliminations={len(events['eliminations'])}  collisions={len(events['collisions'])}")
+    if events["events"]:
+        print("events: " + ", ".join(f"{e['type']}@{e['t']}s" for e in events["events"]))
     print(f"wrote {out}")

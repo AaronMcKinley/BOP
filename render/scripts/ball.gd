@@ -31,6 +31,7 @@ const COLORS: Array[Color] = [
 ]
 
 const RADIUS := 38.0
+const GLOW_LAYERS := [[1.7, 0.03], [1.45, 0.06], [1.25, 0.10], [1.12, 0.16], [1.04, 0.24]]
 const BODY_DARK := Color(0.03, 0.05, 0.08)
 
 var spoke_speed := 2.5        # rad/s; render.gd sets it to 1 rev per beat (TAU * BPM / 60)
@@ -52,9 +53,10 @@ func _draw() -> void:
 		# Anchor dot on the rim, so the attachment point reads clearly.
 		draw_circle(anchor - position, 3.5, Color(c.r, c.g, c.b, 0.9))
 
-	# Layered glow so the disc reads against the dark arena.
-	draw_circle(Vector2.ZERO, RADIUS * 2.2, Color(c.r, c.g, c.b, 0.08))
-	draw_circle(Vector2.ZERO, RADIUS * 1.55, Color(c.r, c.g, c.b, 0.16))
+	# Layered glow so the disc reads as emitting light: a tight falloff from
+	# the rim outward.
+	for layer in GLOW_LAYERS:
+		draw_circle(Vector2.ZERO, RADIUS * layer[0], Color(c.r, c.g, c.b, layer[1]))
 
 	# Dark Tron body.
 	draw_circle(Vector2.ZERO, RADIUS, BODY_DARK)
