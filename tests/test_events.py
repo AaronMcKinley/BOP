@@ -2,7 +2,7 @@
 
 from simulation.events import immunity, roll, speed_boost, sudden_death
 from simulation.physics import Arena, Battle
-from simulation.simulate import detect_drops
+from simulation.simulate import detect_drops, main_drop
 
 ARENA = Arena(cx=540.0, cy=960.0, radius=380.0)
 
@@ -13,6 +13,13 @@ def test_detect_drops_finds_energy_surges():
              [5.0, 0.9], [6.0, 0.2], [7.0, 0.2], [8.0, 0.9], [9.0, 0.9]]
     drops = detect_drops(curve, min_rise=0.4, window_s=1.0, min_gap=3.0)
     assert drops == [3.0, 8.0]
+
+
+def test_main_drop_picks_strongest_surge():
+    # Two drops (at 3.0 and 7.0); the strongest surge (7.0) is the main one.
+    curve = [[0.0, 0.1], [1.0, 0.1], [2.0, 0.1], [3.0, 0.7], [4.0, 0.7],
+             [5.0, 0.2], [6.0, 0.2], [7.0, 0.95], [8.0, 0.95], [9.0, 0.95]]
+    assert main_drop(curve, min_rise=0.4, window_s=1.0, min_gap=3.0) == 7.0
 
 
 def make_battle(seed: int = 1) -> Battle:

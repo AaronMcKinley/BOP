@@ -51,6 +51,48 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
+
+CREDITS_FILE = ROOT / "config" / "credits.json"
+
+
+def load_credits() -> dict:
+    """The song's required credit lines (see config/credits.json)."""
+    try:
+        return load_json(CREDITS_FILE)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def build_caption(metadata: dict, credits: dict, stats: dict) -> str:
+    """A ready-to-paste caption for the saved battle, including the license
+    credit (TheFatRat requires the full title + artist + original link in
+    every description)."""
+    wid = int(metadata["winner"])
+    name = next((b["name"] for b in stats["balls"] if b["id"] == wid), "???")
+    dur = metadata.get("duration_s", 0)
+    points = metadata.get("points", {})
+    # battle_points() keys are ints in memory (strings after the JSON round-trip).
+    delta = int(points.get(wid, points.get(str(wid), 0)))
+    total = next((b.get("points", 0) for b in stats["balls"] if b["id"] == wid), 0)
+    lines = [
+        f"{name.upper()} WINS! 🏆",
+        f"seed #{metadata.get('seed', '?')} · {dur}s",
+        "",
+        "New battle every day — Season 1: the Neon League.",
+    ]
+    if delta or total:
+        lines.append(f"Scoreboard: +{delta} = {total}")
+    credit = credits.get("music_credit")
+    link = credits.get("music_link")
+    if credit:
+        lines.append("")
+        lines.append(credit)
+    if link:
+        lines.append(link)
+    lines.append("")
+    lines.append("#BOP #BeatOrientatedPhysics #neon #shorts")
+    return "\n".join(lines)
+
 def main():
     parser = argparse.ArgumentParser(
         description="Save the last created battle to the publish folder + update stats.")
@@ -137,6 +179,11 @@ def main():
         ball["eliminations"] = ball.get("eliminations", 0) + bstats.get("kills", 0)
         ball["collisions"] = ball.get("collisions", 0) + bstats.get("collisions", 0)
     save_json(stats_file, stats)
+
+    # Ready-to-paste caption for the published battle, with the required music
+    # credit baked in (TheFatRat license: full title + artist + original link).
+    caption = build_caption(metadata, load_credits(), stats)
+    (song_dir / f"battle_{battle_num:03d}_caption.txt").write_text(caption, encoding="utf-8")
 
     # Record the battle's seed so a future create never rolls the same battle.
     if seed is not None and record_seed(int(seed), args.used_seeds):

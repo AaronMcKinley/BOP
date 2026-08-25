@@ -44,8 +44,7 @@ flatpak run org.godotengine.Godot --path "$ROOT/render" --resolution 540x960 \
   -- --events "$EVENTS"
 
 echo "== muxing with music =="
-.venv/bin/python postprocess/mux.py --video "$AVI" --audio "$SONG" --out "$MP4" \
-  --timeline "$ROOT/output/timelines/MONODY-BIMONTE-REMIX.json"
+.venv/bin/python postprocess/mux.py --video "$AVI" --audio "$SONG" --out "$MP4"
 
 echo "== playing $MP4 =="
 xdg-open "$MP4"

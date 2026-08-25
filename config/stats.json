@@ -1,71 +1,71 @@
 {
-  "battle_count": 0,
+  "battle_count": 1,
   "season": 1,
   "balls": [
     {
       "id": 0,
       "name": "red",
-      "points": 0,
+      "points": 2,
       "wins": 0,
-      "losses": 0,
-      "podiums": 0,
+      "losses": 1,
+      "podiums": 1,
       "kills": 0,
       "eliminations": 0,
       "lifeline_cuts": 0,
-      "collisions": 0,
-      "total_battles": 0
+      "collisions": 3,
+      "total_battles": 1
     },
     {
       "id": 1,
       "name": "blue",
-      "points": 0,
+      "points": 1,
       "wins": 0,
-      "losses": 0,
+      "losses": 1,
       "podiums": 0,
       "kills": 0,
       "eliminations": 0,
       "lifeline_cuts": 0,
-      "collisions": 0,
-      "total_battles": 0
+      "collisions": 2,
+      "total_battles": 1
     },
     {
       "id": 2,
       "name": "green",
-      "points": 0,
-      "wins": 0,
+      "points": 4,
+      "wins": 1,
       "losses": 0,
-      "podiums": 0,
-      "kills": 0,
-      "eliminations": 0,
+      "podiums": 1,
+      "kills": 2,
+      "eliminations": 2,
       "lifeline_cuts": 0,
-      "collisions": 0,
-      "total_battles": 0
+      "collisions": 9,
+      "total_battles": 1
     },
     {
       "id": 3,
       "name": "yellow",
-      "points": 0,
+      "points": 3,
       "wins": 0,
-      "losses": 0,
-      "podiums": 0,
-      "kills": 0,
-      "eliminations": 0,
+      "losses": 1,
+      "podiums": 1,
+      "kills": 2,
+      "eliminations": 2,
       "lifeline_cuts": 0,
-      "collisions": 0,
-      "total_battles": 0
+      "collisions": 9,
+      "total_battles": 1
     },
     {
       "id": 4,
       "name": "purple",
       "points": 0,
       "wins": 0,
-      "losses": 0,
+      "losses": 1,
       "podiums": 0,
       "kills": 0,
       "eliminations": 0,
       "lifeline_cuts": 0,
-      "collisions": 0,
-      "total_battles": 0
+      "collisions": 3,
+      "total_battles": 1
     },
     {
       "id": 5,

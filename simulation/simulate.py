@@ -54,6 +54,31 @@ def detect_drops(energy_curve: list, min_rise: float = 0.3, min_gap: float = 6.0
     return drops
 
 
+def main_drop(energy_curve: list, min_rise: float = 0.3, min_gap: float = 6.0,
+              window_s: float = 1.5):
+    """The single strongest musical drop (largest energy surge), or None.
+
+    A drop is an energy rise of at least `min_rise` over a ~`window_s` window
+    that lands at high energy. Returns the time of the strongest one - the
+    camera slams on this ONE moment per battle, not every little surge.
+    """
+    if len(energy_curve) < 2:
+        return None
+    dt = max(energy_curve[1][0] - energy_curve[0][0], 0.001)
+    n = max(1, int(round(window_s / dt)))
+    best_t, best_rise = None, -1.0
+    last_t = -min_gap
+    for i in range(n, len(energy_curve)):
+        t, e = energy_curve[i]
+        t0, e0 = energy_curve[i - n]
+        rise = e - e0
+        if t - last_t >= min_gap and rise >= min_rise and e >= 0.45:
+            if rise > best_rise:
+                best_t, best_rise = round(t, 2), round(rise, 3)
+            last_t = t
+    return best_t
+
+
 def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
              event_chance: float = 0.0, energy_curve: Optional[list] = None) -> dict:
     """Run a battle to its end and return the events.json dict.
@@ -74,6 +99,11 @@ def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
     while not battle.is_over():
         frames.append({"t": round(battle.time, 6), "balls": battle.frame_state()})
         battle.step()
+    # The resolved end state: the last step eliminated the runner-up, so the
+    # final frame must capture the winner alone (the renderer freezes on this
+    # frame for the winner hold). 10ms past the last event so the final kill
+    # burst renders too.
+    frames.append({"t": round(battle.time + 0.01, 6), "balls": battle.frame_state()})
 
     events = {
         "seed": seed,
@@ -93,14 +123,14 @@ def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
         # the same channel as immunity / walls / speed boosts.
         "events": battle.events,
     }
-    # Musical drops: sharp low->high energy surges in the song. The renderer
-    # reacts to each with a camera jump + zoom, so the drop feels part of the
-    # action. Only drops that land before the battle ends matter.
+    # The single main drop (the strongest energy surge in the song): the
+    # renderer jumps + zooms on it, then pushes in closer through the finale.
+    # Only counts if it lands before the battle ends.
     if energy_curve:
-        drops = [{"type": "drop", "t": t} for t in detect_drops(energy_curve)
-                 if t <= battle.time]
-        if drops:
-            events["events"] = sorted(battle.events + drops, key=lambda e: e["t"])
+        drop_t = main_drop(energy_curve)
+        if drop_t is not None and drop_t <= battle.time:
+            events["events"] = sorted(
+                battle.events + [{"type": "drop", "t": drop_t}], key=lambda e: e["t"])
     # Scoring: finishing positions, points, and the standings before/after this
     # battle (the end-of-video winner/table sequence reads these, and the table
     # needs "before" to show who moved).

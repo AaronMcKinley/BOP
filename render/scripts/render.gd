@@ -13,15 +13,19 @@ const ArenaScript := preload("res://scripts/arena.gd")
 const WinnerScreen := preload("res://scripts/winner_screen.gd")
 const DEFAULT_EVENTS := "res://fixtures/sample_events.json"
 const BURST_LIFE := 0.6         # seconds a particle burst lives
+const WINNER_HOLD_FRAMES := 60  # freeze the winner on the game screen ~1s before the reveal
 
-const DROP_IMPACT_S := 0.4      # camera punch duration after a musical drop
-const DROP_ZOOM := 0.10         # peak zoom-in on a drop (1.0 -> 1.10)
-const DROP_SHAKE := 26.0        # peak camera jitter (px) on a drop
+const DROP_IMPACT_S := 0.5      # shake duration when the main drop lands
+const DROP_SHAKE := 40.0        # peak camera jitter (px) on the drop
+const DROP_ZOOM := 0.30         # zoom to 1.30 on the drop - tighter on the action;
+                                #   1.40 would clip the arena edges (6px margin)
+const ZOOM_IN_S := 0.8          # how fast the camera pushes in (then holds)
 
 var _frames: Array = []
 var _events_data: Dictionary = {}
 var _balls := {}          # ball id -> Ball node
 var _frame_index := 0
+var _winner_hold_frames := 0
 var _current_t := 0.0
 var _arena: ArenaScript
 var _winner_screen: WinnerScreen
@@ -30,10 +34,11 @@ var _bounce_idx := 0
 var _elim_idx := 0
 var _bursts: Array = []   # [{node: CPUParticles2D, expires: float}]
 var _cam: Camera2D
-var _drops: Array = []    # drop events from the timeline that punch the camera
+var _drops: Array = []    # the main drop event (one per battle) from the timeline
 var _drop_idx := 0
-var _impact_t := 0.0      # > 0 while a drop impact is shaking/zooming
-var _impact_zoom := 0.0
+var _drop_time := -1.0    # battle time of the main drop (-1 = not fired yet)
+var _zoom_in := 0.0       # 0..1 push-in progress toward the finale
+var _impact_t := 0.0      # > 0 while the drop shake is active
 var _shake := 0.0
 
 func _ready() -> void:
@@ -66,16 +71,21 @@ func _ready() -> void:
 	# field is affected.
 	_cam = Camera2D.new()
 	_cam.position = Vector2(540.0, 960.0)
-	_cam.make_current()
 	add_child(_cam)
+	_cam.make_current()
 	for e in _events_data.get("events", []):
 		if e.get("type", "") == "drop":
 			_drops.append(e)
 
 func _process(delta: float) -> void:
 	if _frame_index >= _frames.size():
-		# Battle is over - play the winner reveal + league table, then finish.
-		if _winner_screen == null:
+		# Battle is over. Hold the frozen winner on the game screen for a beat
+		# (so it's clear who won) while the camera settles, then play the
+		# winner reveal + league table, then finish.
+		if _winner_hold_frames < WINNER_HOLD_FRAMES:
+			_winner_hold_frames += 1
+			_step_camera(1.0 / 60.0)
+		elif _winner_screen == null:
 			_show_winner_screen()
 		elif _winner_screen.is_done():
 			get_tree().quit()
@@ -97,7 +107,10 @@ func _process(delta: float) -> void:
 	_step_camera(delta)
 
 func _show_winner_screen() -> void:
-	# Clear the battle field - just the winner + table from here on.
+	# Clear the battle field - just the winner + table from here on. Settle the
+	# camera back to a clean, unzoomed frame.
+	_cam.zoom = Vector2.ONE
+	_cam.offset = Vector2.ZERO
 	for ball in _balls.values():
 		ball.visible = false
 	var winner_data: Dictionary = _events_data.get("winner", {})
@@ -174,22 +187,29 @@ func _purge_bursts() -> void:
 			_bursts.remove_at(i)
 
 func _check_drops() -> void:
-	# A musical drop (a sharp energy surge in the song) punches the camera:
-	# an instant jump + zoom-in that settles back, so the drop feels physical.
+	# The single main drop (the strongest energy surge in the song) slams the
+	# camera: a dramatic shake plus a fast zoom-in that holds, so we end up
+	# closer to the action for the finale.
 	while _drop_idx < _drops.size() and float(_drops[_drop_idx]["t"]) <= _current_t:
+		_drop_time = float(_drops[_drop_idx]["t"])
 		_drop_idx += 1
 		_impact_t = DROP_IMPACT_S
-		_impact_zoom = DROP_ZOOM
 		_shake = DROP_SHAKE
+		_zoom_in = 0.0
 
 func _step_camera(delta: float) -> void:
-	# Punchy start, quick settle: zoom up to ~1.10 and a jitter that fades out.
-	if _impact_t > 0.0:
-		_impact_t = maxf(_impact_t - delta, 0.0)
-		var k := _impact_t / DROP_IMPACT_S     # 1 -> 0
-		var ease := k * k
-		_cam.zoom = Vector2.ONE * (1.0 + _impact_zoom * ease)
-		_cam.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake * ease
+	if _drop_time >= 0.0:
+		# Fast ease-out push-in (1.0 -> ~1.20) that settles and holds; the shake
+		# is strongest at the drop and decays.
+		_zoom_in = minf(_zoom_in + delta / ZOOM_IN_S, 1.0)
+		var ease := 1.0 - pow(1.0 - _zoom_in, 3)
+		if _impact_t > 0.0:
+			_impact_t = maxf(_impact_t - delta, 0.0)
+			var k := _impact_t / DROP_IMPACT_S
+			_cam.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake * k
+		else:
+			_cam.offset = Vector2.ZERO
+		_cam.zoom = Vector2.ONE * (1.0 + DROP_ZOOM * ease)
 	else:
 		_cam.zoom = Vector2.ONE
 		_cam.offset = Vector2.ZERO
