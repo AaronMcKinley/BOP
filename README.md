@@ -12,7 +12,7 @@ Runs everything with no arguments, then opens the result:
 
 1. **`simulate.py`** — deterministic physics battle on a fresh random seed (skips seeds already used, re-rolls until ≥ 45 s). Writes `output/events/current.json`.
 2. **Godot** (`render.gd`, Movie Maker mode) — plays `current.json` frame-by-frame → `output/renders/current.avi`. A window flashes during this; Movie Maker needs a real display.
-3. **`mux.py`** — upscales to 1080×1920, encodes H.264/AAC, muxes the song, and fades the music out over the winner screen → `output/renders/current.mp4`, then opens it for review.
+3. **`mux.py`** — upscales to 1080×1920, encodes H.264/AAC, muxes the song, fades the music out over the winner screen, and lays a faint `BOP` watermark below the arena → `output/renders/current.mp4`, then opens it for review.
 
 ### Save a battle — `python scripts/save.py`
 
@@ -49,7 +49,7 @@ BOP/
 │   └── scripts/              # render.gd (entry), arena.gd, ball.gd,
 │                              #   winner_screen.gd, ball_badge.gd, json_loader.gd
 ├── postprocess/
-│   └── mux.py                # upscale + encode + mux song + music fade
+│   └── mux.py                # upscale + encode + mux song + fade + watermark
 ├── scripts/
 │   ├── create.sh             # create + watch a battle (zero args)
 │   ├── save.py               # save a battle + update stats/seed (zero args)
