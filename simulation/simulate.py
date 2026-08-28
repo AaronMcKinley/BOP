@@ -32,16 +32,8 @@ from simulation.seed_registry import DEFAULT_PATH as USED_SEEDS_FILE, load_used_
 ARENA = Arena(cx=540.0, cy=960.0, radius=380.0)
 STATS_FILE = Path(__file__).resolve().parent.parent / "config" / "stats.json"
 
-# Drop detection is song-relative: the same absolute rise can be a huge moment
-# for a calm track and a non-event for a wall of sound, so the thresholds come
-# from the song's own energy distribution instead of fixed numbers.
-DROP_WINDOW_S = 6.0     # phrase-scale window: a drop is a whole-phrase surge
-DROP_MIN_GAP_S = 10.0   # keep qualifying drops apart (one per phrase-ish)
-DROP_RISE_PCT = 90.0    # a drop's rise must beat 90% of this song's rises
-DROP_LAND_PCT = 80.0    # ... and land in the top 20% of this song's energy
-DROP_SMOOTH_S = 1.0     # smooth the curve first so single kick-spikes don't count
-DROP_SELECT_LIMIT_S = 70.0  # THE main drop is picked in the song's usual drop
-                            # range (40s-1:10), not wherever the battle ends
+# Drop detection lives in analysis/analyze.py - the timeline's sections are the
+# ONE source of truth for where the drop starts; simulate.py just reads it.
 SONG_LEVEL_SMOOTH_S = 3.5   # smoothing used to estimate the song's overall level
 SONG_LEVEL_FLOOR = 0.3      # ... clamped so a very quiet song still fights
 
@@ -61,100 +53,42 @@ def _song_energy_level(energy_curve: list) -> float:
     return max(SONG_LEVEL_FLOOR, min(1.0, float(np.median(energies))))
 
 
-def _drop_candidates(energy_curve: list, min_rise: Optional[float],
-                     min_gap: float, window_s: float,
-                     min_land: Optional[float]) -> list:
-    """Qualifying drop times for a song's energy curve.
+def section_drop_start(sections: Optional[list] = None) -> Optional[float]:
+    """The drop start from the song's analysis - the one source of truth.
 
-    A drop is a phrase-scale energy surge that stands out *for this song*:
-    its rise over `window_s` must beat DROP_RISE_PCT of the song's own phrase
-    rises, and its landing must sit above DROP_LAND_PCT of the song's energy.
-    Explicit min_rise / min_land override the song-relative values (for
-    tuning / tests).
+    analysis/analyze.py detects the drop section for every song; this is the
+    moment the choreography leads up to (slow-mo before it, zoom + double speed
+    AT it). None when the analysis found no drop.
     """
-    if len(energy_curve) < 2:
-        return []
-    dt = max(energy_curve[1][0] - energy_curve[0][0], 0.001)
-    win = max(1, int(round(DROP_SMOOTH_S / dt)))
-    energies = np.convolve(
-        [e for _, e in energy_curve], np.ones(win) / win, mode="same")
-    n = max(1, int(round(window_s / dt)))
-    rises = energies[n:] - energies[:-n]
-    lands = energies[n:]
-
-    pos = rises[rises > 0]
-    rise_thresh = float(np.percentile(pos, DROP_RISE_PCT)) if pos.size else 0.0
-    land_thresh = float(np.percentile(lands, DROP_LAND_PCT))
-    if min_rise is not None:
-        rise_thresh = min_rise
-    if min_land is not None:
-        land_thresh = min_land
-
-    drops = []
-    last_t = -min_gap
-    for i in range(n, len(energy_curve)):
-        t = energy_curve[i][0]
-        if t - last_t >= min_gap and rises[i - n] >= rise_thresh \
-                and lands[i - n] >= land_thresh:
-            drops.append(round(t, 2))
-            last_t = t
-    return drops
-
-
-def detect_drops(energy_curve: list, min_rise: Optional[float] = None,
-                 min_gap: float = DROP_MIN_GAP_S, window_s: float = DROP_WINDOW_S,
-                 min_land: Optional[float] = None) -> list:
-    """Musical drops: phrase-scale energy surges that stand out for THIS song.
-
-    Returns the times (song seconds) of the qualifying surges, at least
-    `min_gap` apart. The thresholds are derived from the song's own energy
-    distribution (see _drop_candidates) rather than fixed absolute numbers.
-    """
-    return _drop_candidates(energy_curve, min_rise, min_gap, window_s, min_land)
-
-
-def main_drop(energy_curve: list, min_rise: Optional[float] = None,
-              min_gap: float = DROP_MIN_GAP_S, window_s: float = DROP_WINDOW_S,
-              min_land: Optional[float] = None, limit: float = None):
-    """The drop that lands closest to the battle's end, or None if none qualify.
-
-    Every qualifying surge triggers the same camera slam, so the LATEST one is
-    chosen - it lands right before the finale push-in, which is the moment the
-    drop is meant to punctuate.
-
-    `limit` (optional) caps the search at that song time (e.g. the battle
-    length), so a song whose real drop is past the battle still gets its last
-    surge *inside* the fight.
-    """
-    within = [t for t in _drop_candidates(energy_curve, min_rise, min_gap,
-                                          window_s, min_land)
-              if limit is None or t <= limit]
-    return within[-1] if within else None
+    for s in sections or []:
+        if s.get("label") == "drop":
+            return float(s["start"])
+    return None
 
 
 def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
-             event_chance: float = 0.0, energy_curve: Optional[list] = None) -> dict:
+             event_chance: float = 0.0, energy_curve: Optional[list] = None,
+             sections: Optional[list] = None) -> dict:
     """Run a battle to its end and return the events.json dict.
 
     event_chance is the probability a random battle event fires (immunity /
     speed boost); 0 (default) disables random events entirely. Sudden death
     stays as the scheduled 90 s backstop either way.
 
-    energy_curve (from the song's timeline) is used to find THE main drop,
-    which drives the battle's pacing: the field eases down just before it and
-    snaps back to full speed AT it (see drop_speed_multiplier). Without a
-    timeline the speed follows the plain time-based ramp.
+    sections (the song's analysed timeline sections) carry THE main drop start;
+    it drives the battle's pacing - the field eases down just before it and
+    snaps back to double speed AT it (see drop_speed_multiplier). energy_curve
+    scales the overall pace to the song.
     """
     battle = Battle(seed=seed, arena=ARENA, ball_radius=ball_radius, num_balls=num_balls)
-    # THE one main drop, picked before the battle so the pacing can lead up to
-    # it. Chosen in the song's usual drop range (40s-1:10) rather than
-    # whichever surge happens to be nearest the battle's end.
+    # THE one main drop, from the analysis (one source of truth). Picked before
+    # the battle so the pacing can lead up to it.
     main_drop_at = None
     if energy_curve:
-        main_drop_at = main_drop(energy_curve, limit=DROP_SELECT_LIMIT_S)
+        battle.speed_level = _song_energy_level(energy_curve)
+        main_drop_at = section_drop_start(sections)
         if main_drop_at is not None:
             battle.main_drop_at = main_drop_at
-            battle.speed_level = _song_energy_level(energy_curve)
     battle_events.roll(battle, battle.rng, chance=event_chance)
     frames = []
     while not battle.is_over():
@@ -234,16 +168,19 @@ if __name__ == "__main__":
     used_seeds = set(load_used_seeds(args.used_seeds))
 
     energy_curve = None
+    sections = None
     if args.timeline:
         with open(args.timeline, encoding="utf-8") as f:
-            energy_curve = json.load(f).get("energy_curve", [])
+            timeline = json.load(f)
+        energy_curve = timeline.get("energy_curve", [])
+        sections = timeline.get("sections", [])
 
     if args.seed is not None:
         # An explicit seed is always respected, but warn if it was already used.
         if args.seed in used_seeds:
             print(f"WARNING: seed {args.seed} was already used (see {args.used_seeds})")
         events = simulate(args.seed, args.balls, event_chance=args.event_chance,
-                          energy_curve=energy_curve)
+                          energy_curve=energy_curve, sections=sections)
     else:
         # Fresh random seed each attempt; skip seeds already used in published
         # battles, and re-roll until the battle is long enough (the battle length
@@ -253,7 +190,7 @@ if __name__ == "__main__":
             if seed in used_seeds:
                 continue
             events = simulate(seed, args.balls, event_chance=args.event_chance,
-                              energy_curve=energy_curve)
+                              energy_curve=energy_curve, sections=sections)
             if events["duration_s"] >= args.min_duration:
                 break
             print(f"battle too short ({events['duration_s']:.0f}s < {args.min_duration:.0f}s), re-rolling...")

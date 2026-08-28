@@ -43,6 +43,16 @@ if [ -z "$SONG" ]; then
   echo "  e.g. ./scripts/create.sh \"songs/cradles.mp3\""
   exit 1
 fi
+# Accept a bare filename too: "cradles.mp3" -> songs/cradles.mp3
+# (also accepts "songs/cradles.mp3" or an absolute path).
+if [ ! -f "$SONG" ] && [ -f "$ROOT/songs/$(basename "$SONG")" ]; then
+  SONG="$ROOT/songs/$(basename "$SONG")"
+fi
+if [ ! -f "$SONG" ]; then
+  echo "error: song file not found: $SONG"
+  echo "  put the music in songs/ and pass \"songs/<file>\" or just \"<file>\""
+  exit 1
+fi
 # event_chance: second argument (or EVENT_CHANCE env, default 0 = none).
 EVENT_CHANCE="${2:-${EVENT_CHANCE:-0}}"
 RES="${RES:-1080x1920}"
@@ -75,20 +85,28 @@ rm -f "$EVENTS" "$AVI" "$MP4" "$SONG_FILE"
 # song default of its own), so the publish folder always matches the music.
 printf '%s' "$SONG_NAME" > "$SONG_FILE"
 
-echo "== simulating battle (song: ${SONG_NAME}, event chance ${EVENT_CHANCE}) =="
-# The song's timeline drives the energy speed ramp + drop detection; without it
-# (no analysis yet) the battle uses the plain time-based ramp.
-TIMELINE_ARGS=()
-if [ -f "$TIMELINE" ]; then
-  TIMELINE_ARGS=(--timeline "$TIMELINE")
+# The timeline IS the analysis: it drives the battle pacing (simulate), the
+# arena pulsing and the spoke rotation (render). Required - no fallback or
+# default: if the song hasn't been analysed the pipeline fails and says what
+# to run.
+if [ ! -f "$TIMELINE" ]; then
+  echo "error: no timeline for this song: $TIMELINE"
+  echo "  analyse it first with:"
+  echo "    .venv/bin/python analysis/analyze.py \"$SONG\" --out \"$TIMELINE\""
+  exit 1
 fi
+
+echo "== simulating battle (song: ${SONG_NAME}, event chance ${EVENT_CHANCE}) =="
 .venv/bin/python simulation/simulate.py --balls "$BALLS" --min-duration "$MIN_DURATION" \
-  --event-chance "$EVENT_CHANCE" "${TIMELINE_ARGS[@]}" --out "$EVENTS"
+  --event-chance "$EVENT_CHANCE" --timeline "$TIMELINE" --out "$EVENTS"
 
 echo "== rendering at ${RES} (a window flashes; length = battle length) =="
+# The renderer gets the same timeline: the arena rim bumps on this song's
+# beats, the shockwaves follow its energy, and the spokes rotate one full turn
+# per beat - never the fixture's.
 flatpak run org.godotengine.Godot --path "$ROOT/render" --resolution "$RES" \
   --write-movie "$AVI" --quit-after 20000 --fixed-fps 60 \
-  -- --events "$EVENTS"
+  -- --events "$EVENTS" --timeline "$TIMELINE"
 
 echo "== muxing with music (song: ${SONG_NAME}) =="
 .venv/bin/python postprocess/mux.py --video "$AVI" --audio "$SONG" --out "$MP4"

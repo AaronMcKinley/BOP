@@ -76,7 +76,8 @@ Each stage also runs standalone:
 ```bash
 .venv/bin/python simulation/simulate.py --seed 123 --balls 5 --out output/events/x.json
 flatpak run org.godotengine.Godot --path render --resolution 1080x1920 \
-  --write-movie out.avi --fixed-fps 60 -- --events output/events/x.json
+  --write-movie out.avi --fixed-fps 60 \
+  -- --events output/events/x.json --timeline output/timelines/<song>.json
 .venv/bin/python postprocess/mux.py --video out.avi \
   --audio songs/monody.wav --out out.mp4
 ```

@@ -21,11 +21,17 @@ Remaining work by priority.
 - [ ] Sound effects: procedural bounce tick / collision thump (scaled by
       impact) / elimination whoosh / win sting — played at event times, under
       the song. (Sound clips the user is sourcing drop into a folder)
-- [ ] Announcer voice overs (Mortal-Kombat-style): "FIGHT!" at the start,
+- [ ] Announcer voice audio (Mortal-Kombat-style): "FIGHT!" at the start,
       "FINISH HIM!" at sudden death, "FLAWLESS VICTORY!" at the reveal,
       occasional flavor lines on kills
-- [ ] "SUDDEN DEATH" banner + rim flash when the event fires (the renderer
-      already reacts to `drop` events the same way)
+- [ ] Sudden death must READ as a moment — the first live watch was unclear:
+      the rules changed and nothing said so. Full "SUDDEN DEATH" banner +
+      rim flash + the "FINISH HIM!" voice line landing together, so it's
+      obvious the battle just flipped (the renderer already reacts to `drop`
+      events the same way)
+- [ ] Acceleration kicks: balls gain an acceleration boost (×x) on musical
+      beats and on collisions, so the action punches with the song. Exact
+      factor/mechanism TBD — fine as is for now
 - [ ] Optional polish: final kill lands on/near a beat so the winner reveal
       lands on the beat; camera keeps creeping in after the drop
 

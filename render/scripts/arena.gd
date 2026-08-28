@@ -9,11 +9,11 @@ extends Node2D
 #
 # The battle balls move inside; this only reacts to the music.
 #
-# Usage: pass "--timeline path/to/timeline.json" after "--" to override the
-# default fixture at res://fixtures/timeline.json
+# Usage: pass "--timeline path/to/timeline.json" after "--" (create.sh always
+# does). Required - if it is missing the renderer refuses to run: the arena
+# must pulse on the actual song's beats, never a fixture's.
 
 const JsonLoader := preload("res://scripts/json_loader.gd")
-const DEFAULT_TIMELINE := "res://fixtures/timeline.json"
 
 const CENTER := Vector2(540.0, 960.0)   # 1080x1920 design space
 const BASE_RADIUS := 380.0
@@ -41,7 +41,10 @@ var _flash_color := Color(1, 1, 1)
 func _ready() -> void:
 	var timeline := JsonLoader.load_events(_timeline_path())
 	if timeline.is_empty():
-		push_error("arena: no timeline loaded; ring will not pulse")
+		push_error("arena: no timeline given (pass --timeline after \"--\"). "
+			+ "The arena pulses on the song's beats - refusing to fall back to "
+			+ "a fixture.")
+		get_tree().quit(1)
 		return
 	beats = timeline["beats"]
 	energy_curve = timeline["energy_curve"]
@@ -140,5 +143,5 @@ func _timeline_path() -> String:
 	for i in range(args.size() - 1):
 		if args[i] == "--timeline":
 			return args[i + 1]
-	return DEFAULT_TIMELINE
+	return ""
 

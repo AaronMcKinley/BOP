@@ -19,6 +19,7 @@ import librosa
 import numpy as np
 
 DEFAULT_SR = 22050
+BEAT_BACKFILL_S = 5.0    # if the first beat is later than this, extend the grid back
 
 
 def extract_beats(audio_path: Union[str, Path], sr: int = DEFAULT_SR) -> Dict[str, object]:
@@ -31,6 +32,15 @@ def extract_beats(audio_path: Union[str, Path], sr: int = DEFAULT_SR) -> Dict[st
     tempo = float(np.asarray(tempo).item())
 
     beats = librosa.frames_to_time(beat_frames, sr=sr).astype(float)
+    # A beat grid that starts late (quiet/sparse intro) is usually the tracker
+    # missing the opening beats; extend the grid back at the tempo so the arena
+    # pulses from the start of the song.
+    if len(beats) and beats[0] > BEAT_BACKFILL_S:
+        period = 60.0 / tempo if tempo > 0 else 0.5
+        n = int(beats[0] / period)
+        back = np.array([beats[0] - (i + 1) * period for i in range(n)])
+        beats = np.concatenate([back[::-1], beats]).astype(float)
+
     downbeats = beats[0::4].astype(float)  # 4/4 assumption
 
     return {
