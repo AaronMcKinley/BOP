@@ -27,9 +27,9 @@ def battle_points(positions):
 
 
 def leaderboard_current(stats):
-    """Current standings (before this battle), sorted by points.
-
-    Each row: {id, name, points, wins, kills, position}.
+    """Current standings (before this battle), sorted by points, kills as the
+    tiebreaker - equal points are ordered by kills so the table moves between
+    battles. Each row: {id, name, points, wins, kills, position}.
     """
     rows = []
     for ball in stats.get("balls", []):
@@ -40,14 +40,15 @@ def leaderboard_current(stats):
             "wins": ball.get("wins", 0),
             "kills": ball.get("kills", 0),
         })
-    rows.sort(key=lambda r: (-r["points"], -r["wins"], r["id"]))
+    rows.sort(key=lambda r: (-r["points"], -r["kills"], -r["wins"], r["id"]))
     for i, row in enumerate(rows, 1):
         row["position"] = i
     return rows
 
 
 def leaderboard_after(stats, positions, points, battle_stats=None):
-    """The season standings as they would look after this battle, sorted by points.
+    """The season standings as they would look after this battle, sorted by
+    points with kills as the tiebreaker.
 
     Each row: {id, name, points, wins, podiums, kills, delta, position}.
     """
@@ -72,7 +73,7 @@ def leaderboard_after(stats, positions, points, battle_stats=None):
             "kills": kills,
             "delta": pts,
         })
-    rows.sort(key=lambda r: (-r["points"], -r["wins"], r["id"]))
+    rows.sort(key=lambda r: (-r["points"], -r["kills"], -r["wins"], r["id"]))
     for i, row in enumerate(rows, 1):
         row["position"] = i
     return rows

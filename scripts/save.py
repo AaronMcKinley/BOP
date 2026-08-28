@@ -35,8 +35,11 @@ STATS_FILE = ROOT / "config" / "stats.json"
 PUBLISH_ROOT = ROOT / "output" / "publish"
 DEFAULT_VIDEO = ROOT / "output" / "renders" / "current.mp4"
 DEFAULT_EVENTS = ROOT / "output" / "events" / "current.json"
-# Song used by the create script; keep the two in sync when a new song arrives.
-DEFAULT_SONG = "MONODY-BIMONTE-REMIX"
+# The song is whatever create.sh last used (it writes the name here) - save.py
+# has no song default of its own, so the publish folder always matches the music.
+SONG_FILE = ROOT / "output" / "events" / "song.txt"
+# Plain-text per-song credit lines, config/credits/<song>.txt (the caption).
+CREDITS_DIR = ROOT / "config" / "credits"
 DEFAULT_MAX_PER_SONG = 10
 SEASON = 1
 
@@ -52,21 +55,17 @@ def save_json(path, data):
         json.dump(data, f, indent=2)
 
 
-CREDITS_FILE = ROOT / "config" / "credits.json"
-
-
-def load_credits() -> dict:
-    """The song's required credit lines (see config/credits.json)."""
+def load_credit(song: str) -> str:
+    """The song's required music credit, from config/credits/<song>.txt."""
     try:
-        return load_json(CREDITS_FILE)
-    except (OSError, json.JSONDecodeError):
-        return {}
+        return (CREDITS_DIR / f"{song}.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
-def build_caption(metadata: dict, credits: dict, stats: dict) -> str:
-    """A ready-to-paste caption for the saved battle, including the license
-    credit (TheFatRat requires the full title + artist + original link in
-    every description)."""
+def build_caption(metadata: dict, credit: str, stats: dict) -> str:
+    """A ready-to-paste caption for the saved battle, including the song's
+    license credit (each platform wants the required credit in the description)."""
     wid = int(metadata["winner"])
     name = next((b["name"] for b in stats["balls"] if b["id"] == wid), "???")
     dur = metadata.get("duration_s", 0)
@@ -82,13 +81,9 @@ def build_caption(metadata: dict, credits: dict, stats: dict) -> str:
     ]
     if delta or total:
         lines.append(f"Scoreboard: +{delta} = {total}")
-    credit = credits.get("music_credit")
-    link = credits.get("music_link")
     if credit:
         lines.append("")
         lines.append(credit)
-    if link:
-        lines.append(link)
     lines.append("")
     lines.append("#BOP #BeatOrientatedPhysics #neon #shorts")
     return "\n".join(lines)
@@ -100,8 +95,9 @@ def main():
                         help="rendered mp4 (default output/renders/current.mp4)")
     parser.add_argument("--events", default=str(DEFAULT_EVENTS),
                         help="events.json for this battle (default output/events/current.json)")
-    parser.add_argument("--song", default=DEFAULT_SONG,
-                        help="song name for the publish folder (default MONODY-BIMONTE-REMIX)")
+    parser.add_argument("--song", default=None,
+                        help="song name for the publish folder (default: the song "
+                             "create.sh last used, from output/events/song.txt)")
     parser.add_argument("--stats", default=str(STATS_FILE),
                         help="leaderboard json path (default config/stats.json)")
     parser.add_argument("--publish", default=str(PUBLISH_ROOT),
@@ -123,6 +119,18 @@ def main():
 
     events = load_json(events_path)
 
+    # The song comes from create.sh (it wrote the name to song.txt); --song is
+    # only an override. No default of its own, so it always matches the music.
+    song = args.song
+    if song is None:
+        try:
+            song = SONG_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            sys.exit(f"save: no song on record (missing {SONG_FILE}).\n"
+                     f"Run scripts/create.sh first - it writes the song name there.")
+    if not song:
+        sys.exit("save: empty song name in " + str(SONG_FILE))
+
     # Never save the same battle twice: the seed makes the sim deterministic,
     # so saving it again would double-count the stats.
     seed = events.get("seed")
@@ -131,7 +139,7 @@ def main():
 
     stats_file = Path(args.stats)
     publish_root = Path(args.publish)
-    song_dir = publish_root / args.song
+    song_dir = publish_root / song
 
     # Leaderboard.
     stats = load_json(stats_file)
@@ -148,7 +156,7 @@ def main():
     metadata = {
         "battle": battle_num,
         "season": SEASON,
-        "track": args.song,
+        "track": song,
         "seed": events.get("seed"),
         "duration_s": events.get("duration_s"),
         "winner": int(events["winner"]["ball_id"]),
@@ -180,9 +188,9 @@ def main():
         ball["collisions"] = ball.get("collisions", 0) + bstats.get("collisions", 0)
     save_json(stats_file, stats)
 
-    # Ready-to-paste caption for the published battle, with the required music
-    # credit baked in (TheFatRat license: full title + artist + original link).
-    caption = build_caption(metadata, load_credits(), stats)
+    # Ready-to-paste caption for the published battle, with the song's required
+    # music credit baked in (from config/credits/<song>.txt).
+    caption = build_caption(metadata, load_credit(song), stats)
     (song_dir / f"battle_{battle_num:03d}_caption.txt").write_text(caption, encoding="utf-8")
 
     # Record the battle's seed so a future create never rolls the same battle.

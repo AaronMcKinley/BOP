@@ -63,6 +63,11 @@ SUBSTEPS = 3                   # physics sub-steps per frame - precise collision
                                #   endgame speeds (no ghosting/overlap)
 SUDDEN_DEATH_AT = 90.0         # at this time no NEW lifelines appear - the web can
                                #   only shrink, so the battle must end by decay (1:30)
+PRE_DROP_S = 3.0              # the slow-mo runs over the 3s before the main drop
+PRE_DROP_FLOOR = 0.3          # slow-mo depth: the field eases down to 30% speed
+POST_DROP_MULT = 2.0          # after the drop the battle runs at 2x the speed it
+                              #   recorded just before the slow-mo - the frantic
+                              #   finish (never clamped)
 
 Point = Tuple[float, float]
 
@@ -278,6 +283,29 @@ def energy_speed_multiplier(t: float, energy_curve: List[List[float]]) -> float:
     return START_RAMP_FLOOR + (MAX_SPEED_MULT - START_RAMP_FLOOR) * progress * e
 
 
+def drop_speed_multiplier(t: float, drop_t: float, base_level: float = 1.0) -> float:
+    """Time ramp -> slow-mo -> 2x recorded speed at the main drop.
+
+    The battle builds on the normal ramp (scaled by the song's overall level -
+    loud songs race, calm ones cruise). Just before the main drop the ramp's
+    speed is RECORDED, the field eases into slow-mo for a few seconds, then AT
+    the drop the camera zooms and the battle jumps to double the recorded speed
+    - the frantic finish. The song is NOT followed pulse-by-pulse here: the
+    main drop is the one moment the music gets to shape the battle dynamics.
+    """
+    base = ramp_speed_multiplier(t) * base_level
+    # The cruising speed just before the slow-mo begins: the finish runs at 2x this.
+    recorded = ramp_speed_multiplier(drop_t - PRE_DROP_S) * base_level
+    if t >= drop_t:
+        return recorded * POST_DROP_MULT
+    lead = drop_t - t
+    if lead >= PRE_DROP_S:
+        return base
+    k = lead / PRE_DROP_S                   # 1 at slow-mo start, 0 at the drop
+    ease = k * k * (3.0 - 2.0 * k)          # smoothstep 1 -> 0
+    return base * (PRE_DROP_FLOOR + (1.0 - PRE_DROP_FLOOR) * ease)
+
+
 def restore_speed(rng: random.Random, ball: Ball, speed_mult: float = 1.0) -> None:
     """Nudge a ball's speed back toward base_speed * speed_mult each frame.
 
@@ -342,8 +370,14 @@ class Battle:
         self.immunity_until: float = 0.0     # no eliminations while time < this
         self.speed_boost_until: float = 0.0  # field speed surge while time < this
         self.speed_boost_mult: float = 1.5
-        # Music-driven speed: when a timeline's energy curve is supplied, the
-        # field speed follows the song instead of the time-based ramp.
+        # Music-driven pacing: when a timeline is supplied, the ONE main drop
+        # (the song's big surge, usually 40-70s) drives the battle - the field
+        # runs the normal ramp, dips into slow-mo just before it, then doubles
+        # the recorded speed AT it (drop_speed_multiplier). -1 = no drop.
+        self.main_drop_at: float = -1.0
+        # Overall pace scale: the song's "how intense is it" level (a constant,
+        # not a curve) so loud songs race and calm ones cruise without pulsing.
+        self.speed_level: float = 1.0
         self.energy_curve: List[List[float]] = []
         self._speed_mult_smoothed: float = START_RAMP_FLOOR
         self._winner: Optional[int] = None
@@ -394,8 +428,13 @@ class Battle:
                             "impact": round(min(1.0, impact / self.speed), 2),
                         })
         # Balls recover speed toward their (ramped) base speed. The ramp makes
-        # the whole field ease from a slow opening up to full battle speed.
-        if self.energy_curve:
+        # the whole field ease from a slow opening up to full battle speed. A
+        # main drop overrides the ramp with the slow-then-bam choreography;
+        # the energy-curve follower remains for timelines that set it directly.
+        if self.main_drop_at >= 0.0:
+            target_mult = drop_speed_multiplier(self.time, self.main_drop_at,
+                                                self.speed_level)
+        elif self.energy_curve:
             target_mult = energy_speed_multiplier(self.time, self.energy_curve)
         else:
             target_mult = ramp_speed_multiplier(self.time)

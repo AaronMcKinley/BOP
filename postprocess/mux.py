@@ -43,18 +43,39 @@ def _video_duration(path: Path) -> float:
         return 0.0
 
 
+def _video_dimensions(path: Path):
+    """Width, height of the rendered video's first video stream."""
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True)
+    try:
+        w, h = result.stdout.strip().split(",")
+        return int(w), int(h)
+    except (ValueError, AttributeError):
+        return WIDTH, HEIGHT
+
+
 def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0,
         watermark: str = WATERMARK_DEFAULT,
-        watermark_alpha: float = WATERMARK_ALPHA) -> None:
-    """Upscale the video, encode it, and mux the song starting at offset_s.
+        watermark_alpha: float = WATERMARK_ALPHA,
+        out_width: int = 0, out_height: int = 0) -> None:
+    """Encode the video at its own resolution (min Full HD) and mux the song.
 
-    watermark is faint brand text drawn on the frame background ('' = none).
+    The render now produces crisp 1080x1920 (or 4K) directly, so mux passes it
+    through rather than upscaling. Smaller sources (e.g. old 540x960 renders)
+    still get raised to Full HD. watermark is faint brand text drawn on the
+    frame background ('' = none); it scales with the frame height.
     """
     if not video.exists():
         sys.exit(f"mux: video not found: {video}")
     if not audio.exists():
         sys.exit(f"mux: audio not found: {audio}")
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    src_w, src_h = _video_dimensions(video)
+    out_w = out_width if out_width else max(src_w, WIDTH)
+    out_h = out_height if out_height else max(src_h, HEIGHT)
 
     # `-ss` placed before `-i audio` seeks that input, so the video can start
     # at any point in the song (the director will pick a highlight window later).
@@ -69,13 +90,17 @@ def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0,
         fade_start = max(0.0, duration - END_SEQ_S)
         afilter = f"afade=t=out:st={fade_start:.2f}:d={FADE_S}:curve=esin"
 
-    # Upscale, then lay the faint watermark in the background below the arena
-    # circle - visible but not competing with the action or the winner screen.
-    vfilter = f"scale={WIDTH}:{HEIGHT}:flags=lanczos"
+    # Pass through at the render's own size (min Full HD), then lay the faint
+    # watermark in the background below the arena circle. The watermark scales
+    # with the frame so it reads the same at 1080p and 4K.
+    scale = out_h / float(HEIGHT)
+    wm_size = max(12, int(round(WATERMARK_SIZE * scale)))
+    wm_y = int(round(WATERMARK_Y * scale))
+    vfilter = f"scale={out_w}:{out_h}:flags=lanczos"
     if watermark:
         vfilter += (
             f",drawtext=text='{watermark}':fontcolor={WATERMARK_COLOR}@{watermark_alpha}"
-            f":fontsize={WATERMARK_SIZE}:x=(w-text_w)/2:y={WATERMARK_Y}")
+            f":fontsize={wm_size}:x=(w-text_w)/2:y={wm_y}")
 
     cmd = [
         "ffmpeg", "-y",
@@ -83,8 +108,9 @@ def mux(video: Path, audio: Path, out: Path, offset_s: float = 0.0,
         *audio_args, "-i", str(audio),
         "-map", "0:v:0", "-map", "1:a:0",   # only video from the render, only audio from the song
         "-vf", vfilter,
-        "-c:v", "libx264", "-preset", "slow", "-crf", "18",
-        "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "16",
+        "-pix_fmt", "yuv420p", "-color_range", "tv",
+        "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
         "-c:a", "aac", "-b:a", "192k",
         *(["-af", afilter] if afilter else []),
         "-shortest",
@@ -109,7 +135,11 @@ if __name__ == "__main__":
                              f"default '{WATERMARK_DEFAULT}')")
     parser.add_argument("--watermark-alpha", type=float, default=WATERMARK_ALPHA,
                         help="watermark opacity 0..1 (default 0.22)")
+    parser.add_argument("--width", type=int, default=0,
+                        help="force output width (default: render's own size, min 1080)")
+    parser.add_argument("--height", type=int, default=0,
+                        help="force output height (default: render's own size, min 1920)")
     args = parser.parse_args()
 
     mux(Path(args.video), Path(args.audio), Path(args.out), args.offset,
-        args.watermark, args.watermark_alpha)
+        args.watermark, args.watermark_alpha, args.width, args.height)

@@ -198,6 +198,10 @@ func _check_drops() -> void:
 		_zoom_in = 0.0
 
 func _step_camera(delta: float) -> void:
+	# The camera is created in _ready; when events failed to load the scene
+	# quits before that, so guard against a null camera.
+	if _cam == null:
+		return
 	if _drop_time >= 0.0:
 		# Fast ease-out push-in (1.0 -> ~1.20) that settles and holds; the shake
 		# is strongest at the drop and decays.

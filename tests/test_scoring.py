@@ -51,6 +51,32 @@ def test_leaderboard_current_sorted():
     assert rows[0]["position"] == 1
 
 
+def test_leaderboard_kills_tiebreak_equal_points():
+    # Equal points are ordered by kills - the table moves on kills, not just id.
+    stats = {"balls": [
+        {"id": 0, "name": "red", "points": 4, "wins": 1, "kills": 2},
+        {"id": 1, "name": "blue", "points": 4, "wins": 2, "kills": 7},
+        {"id": 2, "name": "green", "points": 4, "wins": 2, "kills": 7},
+    ]}
+    rows = leaderboard_current(stats)
+    # blue (7 kills) ahead of red (2 kills); wins then id breaks the blue/green tie.
+    assert [r["id"] for r in rows] == [1, 2, 0]
+
+
+def test_leaderboard_after_kills_tiebreak():
+    # Two balls end on the same points; the one with more kills ranks higher.
+    stats = {"balls": [
+        {"id": 0, "name": "red", "points": 1, "wins": 0, "kills": 1},
+        {"id": 1, "name": "blue", "points": 2, "wins": 0, "kills": 1},
+    ]}
+    positions = {0: 2, 1: 3}                    # 3 and 2 points this battle
+    points = battle_points(positions)            # {0: 3, 1: 2}
+    battle_stats = {0: {"kills": 5}, 1: {"kills": 0}}
+    rows = leaderboard_after(stats, positions, points, battle_stats)
+    # Both end on 4 points; red (6 kills) beats blue (1 kill).
+    assert [r["id"] for r in rows] == [0, 1]
+
+
 def test_leaderboard_after_accumulates():
     stats = {"balls": [
         {"id": 0, "name": "red", "points": 2, "wins": 0, "kills": 1},

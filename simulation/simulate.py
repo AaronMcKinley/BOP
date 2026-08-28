@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from simulation import events as battle_events
@@ -30,53 +32,104 @@ from simulation.seed_registry import DEFAULT_PATH as USED_SEEDS_FILE, load_used_
 ARENA = Arena(cx=540.0, cy=960.0, radius=380.0)
 STATS_FILE = Path(__file__).resolve().parent.parent / "config" / "stats.json"
 
+# Drop detection is song-relative: the same absolute rise can be a huge moment
+# for a calm track and a non-event for a wall of sound, so the thresholds come
+# from the song's own energy distribution instead of fixed numbers.
+DROP_WINDOW_S = 6.0     # phrase-scale window: a drop is a whole-phrase surge
+DROP_MIN_GAP_S = 10.0   # keep qualifying drops apart (one per phrase-ish)
+DROP_RISE_PCT = 90.0    # a drop's rise must beat 90% of this song's rises
+DROP_LAND_PCT = 80.0    # ... and land in the top 20% of this song's energy
+DROP_SMOOTH_S = 1.0     # smooth the curve first so single kick-spikes don't count
+DROP_SELECT_LIMIT_S = 70.0  # THE main drop is picked in the song's usual drop
+                            # range (40s-1:10), not wherever the battle ends
+SONG_LEVEL_SMOOTH_S = 3.5   # smoothing used to estimate the song's overall level
+SONG_LEVEL_FLOOR = 0.3      # ... clamped so a very quiet song still fights
 
-def detect_drops(energy_curve: list, min_rise: float = 0.3, min_gap: float = 6.0,
-                 window_s: float = 1.5) -> list:
-    """Musical drops: sharp low->high energy surges in the song.
 
-    A drop is an energy rise of at least `min_rise` over a ~`window_s` window
-    that lands at high energy. Returns the times (song seconds) of the surges,
-    at least `min_gap` seconds apart.
+def _song_energy_level(energy_curve: list) -> float:
+    """A single "how intense is this song" number - the median of its smoothed
+    energy. It scales the battle's base pace (loud songs race, calm ones
+    cruise) as a constant, so the field never pulses phrase-to-phrase. The
+    smoothing here only stabilises the median estimate; it is not a drive curve.
     """
-    drops = []
     if len(energy_curve) < 2:
-        return drops
+        return 1.0
     dt = max(energy_curve[1][0] - energy_curve[0][0], 0.001)
+    win = max(1, int(round(SONG_LEVEL_SMOOTH_S / dt)))
+    energies = np.convolve(
+        [e for _, e in energy_curve], np.ones(win) / win, mode="same")
+    return max(SONG_LEVEL_FLOOR, min(1.0, float(np.median(energies))))
+
+
+def _drop_candidates(energy_curve: list, min_rise: Optional[float],
+                     min_gap: float, window_s: float,
+                     min_land: Optional[float]) -> list:
+    """Qualifying drop times for a song's energy curve.
+
+    A drop is a phrase-scale energy surge that stands out *for this song*:
+    its rise over `window_s` must beat DROP_RISE_PCT of the song's own phrase
+    rises, and its landing must sit above DROP_LAND_PCT of the song's energy.
+    Explicit min_rise / min_land override the song-relative values (for
+    tuning / tests).
+    """
+    if len(energy_curve) < 2:
+        return []
+    dt = max(energy_curve[1][0] - energy_curve[0][0], 0.001)
+    win = max(1, int(round(DROP_SMOOTH_S / dt)))
+    energies = np.convolve(
+        [e for _, e in energy_curve], np.ones(win) / win, mode="same")
     n = max(1, int(round(window_s / dt)))
+    rises = energies[n:] - energies[:-n]
+    lands = energies[n:]
+
+    pos = rises[rises > 0]
+    rise_thresh = float(np.percentile(pos, DROP_RISE_PCT)) if pos.size else 0.0
+    land_thresh = float(np.percentile(lands, DROP_LAND_PCT))
+    if min_rise is not None:
+        rise_thresh = min_rise
+    if min_land is not None:
+        land_thresh = min_land
+
+    drops = []
     last_t = -min_gap
     for i in range(n, len(energy_curve)):
-        t, e = energy_curve[i]
-        t0, e0 = energy_curve[i - n]
-        if t - last_t >= min_gap and e - e0 >= min_rise and e >= 0.45:
+        t = energy_curve[i][0]
+        if t - last_t >= min_gap and rises[i - n] >= rise_thresh \
+                and lands[i - n] >= land_thresh:
             drops.append(round(t, 2))
             last_t = t
     return drops
 
 
-def main_drop(energy_curve: list, min_rise: float = 0.3, min_gap: float = 6.0,
-              window_s: float = 1.5):
-    """The single strongest musical drop (largest energy surge), or None.
+def detect_drops(energy_curve: list, min_rise: Optional[float] = None,
+                 min_gap: float = DROP_MIN_GAP_S, window_s: float = DROP_WINDOW_S,
+                 min_land: Optional[float] = None) -> list:
+    """Musical drops: phrase-scale energy surges that stand out for THIS song.
 
-    A drop is an energy rise of at least `min_rise` over a ~`window_s` window
-    that lands at high energy. Returns the time of the strongest one - the
-    camera slams on this ONE moment per battle, not every little surge.
+    Returns the times (song seconds) of the qualifying surges, at least
+    `min_gap` apart. The thresholds are derived from the song's own energy
+    distribution (see _drop_candidates) rather than fixed absolute numbers.
     """
-    if len(energy_curve) < 2:
-        return None
-    dt = max(energy_curve[1][0] - energy_curve[0][0], 0.001)
-    n = max(1, int(round(window_s / dt)))
-    best_t, best_rise = None, -1.0
-    last_t = -min_gap
-    for i in range(n, len(energy_curve)):
-        t, e = energy_curve[i]
-        t0, e0 = energy_curve[i - n]
-        rise = e - e0
-        if t - last_t >= min_gap and rise >= min_rise and e >= 0.45:
-            if rise > best_rise:
-                best_t, best_rise = round(t, 2), round(rise, 3)
-            last_t = t
-    return best_t
+    return _drop_candidates(energy_curve, min_rise, min_gap, window_s, min_land)
+
+
+def main_drop(energy_curve: list, min_rise: Optional[float] = None,
+              min_gap: float = DROP_MIN_GAP_S, window_s: float = DROP_WINDOW_S,
+              min_land: Optional[float] = None, limit: float = None):
+    """The drop that lands closest to the battle's end, or None if none qualify.
+
+    Every qualifying surge triggers the same camera slam, so the LATEST one is
+    chosen - it lands right before the finale push-in, which is the moment the
+    drop is meant to punctuate.
+
+    `limit` (optional) caps the search at that song time (e.g. the battle
+    length), so a song whose real drop is past the battle still gets its last
+    surge *inside* the fight.
+    """
+    within = [t for t in _drop_candidates(energy_curve, min_rise, min_gap,
+                                          window_s, min_land)
+              if limit is None or t <= limit]
+    return within[-1] if within else None
 
 
 def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
@@ -87,13 +140,21 @@ def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
     speed boost); 0 (default) disables random events entirely. Sudden death
     stays as the scheduled 90 s backstop either way.
 
-    energy_curve (from the song's timeline) drives the field speed: the battle
-    drifts in the intro, slams at the drop, eases in the breakdown. Without it
-    the speed follows the plain time-based ramp.
+    energy_curve (from the song's timeline) is used to find THE main drop,
+    which drives the battle's pacing: the field eases down just before it and
+    snaps back to full speed AT it (see drop_speed_multiplier). Without a
+    timeline the speed follows the plain time-based ramp.
     """
     battle = Battle(seed=seed, arena=ARENA, ball_radius=ball_radius, num_balls=num_balls)
+    # THE one main drop, picked before the battle so the pacing can lead up to
+    # it. Chosen in the song's usual drop range (40s-1:10) rather than
+    # whichever surge happens to be nearest the battle's end.
+    main_drop_at = None
     if energy_curve:
-        battle.energy_curve = energy_curve
+        main_drop_at = main_drop(energy_curve, limit=DROP_SELECT_LIMIT_S)
+        if main_drop_at is not None:
+            battle.main_drop_at = main_drop_at
+            battle.speed_level = _song_energy_level(energy_curve)
     battle_events.roll(battle, battle.rng, chance=event_chance)
     frames = []
     while not battle.is_over():
@@ -123,14 +184,12 @@ def simulate(seed: int, num_balls: int = 5, ball_radius: float = 38.0,
         # the same channel as immunity / walls / speed boosts.
         "events": battle.events,
     }
-    # The single main drop (the strongest energy surge in the song): the
-    # renderer jumps + zooms on it, then pushes in closer through the finale.
-    # Only counts if it lands before the battle ends.
-    if energy_curve:
-        drop_t = main_drop(energy_curve)
-        if drop_t is not None and drop_t <= battle.time:
-            events["events"] = sorted(
-                battle.events + [{"type": "drop", "t": drop_t}], key=lambda e: e["t"])
+    # The drop event fires at the same time the battle's speed bams, so the
+    # renderer's camera zoom lands exactly on the action. Only if the battle
+    # lasted long enough to reach the drop.
+    if main_drop_at is not None and main_drop_at <= battle.time:
+        events["events"] = sorted(
+            battle.events + [{"type": "drop", "t": main_drop_at}], key=lambda e: e["t"])
     # Scoring: finishing positions, points, and the standings before/after this
     # battle (the end-of-video winner/table sequence reads these, and the table
     # needs "before" to show who moved).

@@ -11,6 +11,9 @@ from simulation.physics import (
     MAX_GAIN_PER_BOUNCE,
     MAX_SPEED_MULT,
     MIN_GAIN_PER_BOUNCE,
+    POST_DROP_MULT,
+    PRE_DROP_FLOOR,
+    PRE_DROP_S,
     START_RAMP_FLOOR,
     Arena,
     Battle,
@@ -18,8 +21,10 @@ from simulation.physics import (
     collide_balls,
     create_balls,
     cut_lifelines,
+    drop_speed_multiplier,
     energy_speed_multiplier,
     grow_lifelines,
+    ramp_speed_multiplier,
     restore_speed,
 )
 
@@ -215,6 +220,45 @@ def test_battle_with_energy_curve_still_finishes():
     a, b = run(), run()
     assert a.winner is not None
     assert b.winner == a.winner   # same seed + curve -> same battle
+
+
+def test_drop_speed_multiplier_slow_mo_then_double_recorded():
+    # Normal ramp -> the cruising speed is recorded just before the slow-mo ->
+    # slow-mo dip -> 2x the recorded speed at the drop (the frantic finish).
+    # base_level scales everything for the song's overall intensity.
+    level = 0.35
+    drop_t = 50.0
+    before = drop_speed_multiplier(30.0, drop_t, base_level=level)
+    assert before == pytest.approx(ramp_speed_multiplier(30.0) * level)
+    # slow-mo right before the drop: eased down to the floor
+    just_before = drop_speed_multiplier(49.999, drop_t, base_level=level)
+    assert just_before == pytest.approx(ramp_speed_multiplier(49.999) * level
+                                        * PRE_DROP_FLOOR, rel=1e-3)
+    # at the drop: double the recorded pre-slow-mo pace (never clamped)
+    recorded = ramp_speed_multiplier(drop_t - PRE_DROP_S) * level
+    at_drop = drop_speed_multiplier(50.0, drop_t, base_level=level)
+    assert at_drop == pytest.approx(recorded * POST_DROP_MULT)
+    assert at_drop == pytest.approx(2.0 * recorded, rel=1e-6)
+    after = drop_speed_multiplier(80.0, drop_t, base_level=level)
+    assert after == pytest.approx(recorded * POST_DROP_MULT)
+    half = drop_speed_multiplier(30.0, drop_t, base_level=level * 0.5)
+    assert half == pytest.approx(before * 0.5)
+
+
+def test_battle_with_main_drop_choreography_finishes():
+    # A battle paced around the main-drop slow-then-bam runs to a winner,
+    # deterministically.
+    def run():
+        battle = Battle(seed=9, arena=ARENA, ball_radius=BALL_RADIUS, num_balls=5)
+        battle.main_drop_at = 50.0
+        battle.speed_level = 0.35
+        while not battle.is_over() and battle.time < 200:
+            battle.step()
+        return battle
+
+    a, b = run(), run()
+    assert a.winner is not None
+    assert b.winner == a.winner
 
 
 def test_sudden_death_emits_event_once():
