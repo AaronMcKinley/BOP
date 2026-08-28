@@ -38,6 +38,8 @@ DEFAULT_EVENTS = ROOT / "output" / "events" / "current.json"
 # The song is whatever create.sh last used (it writes the name here) - save.py
 # has no song default of its own, so the publish folder always matches the music.
 SONG_FILE = ROOT / "output" / "events" / "song.txt"
+# The most recent saved battle's metadata path - undo_save.py defaults to it.
+LAST_SAVED_FILE = ROOT / "output" / "events" / "last_saved.txt"
 # Plain-text per-song credit lines, config/credits/<song>.txt (the caption).
 CREDITS_DIR = ROOT / "config" / "credits"
 DEFAULT_MAX_PER_SONG = 10
@@ -196,6 +198,11 @@ def main():
     # Record the battle's seed so a future create never rolls the same battle.
     if seed is not None and record_seed(int(seed), args.used_seeds):
         print(f"recorded seed {seed} in {args.used_seeds}")
+
+    # Remember which battle was just saved, so undo_save.py can default to it
+    # (it is always the most recent one you would want to undo).
+    LAST_SAVED_FILE.write_text(str(song_dir / f"battle_{battle_num:03d}.json"),
+                               encoding="utf-8")
 
     # Prune to --max per song (keep the newest).
     videos = sorted(song_dir.glob("battle_*.mp4"))

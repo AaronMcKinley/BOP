@@ -11,40 +11,46 @@
 #   python scripts/save.py
 # (moves it to the publish folder, updates stats, records the seed).
 #
-# Usage: ./scripts/create.sh [song] [event_chance]
-#   song (optional): path to the song file (default songs/MONODY-BIMONTE-REMIX.wav)
+# Usage: ./scripts/create.sh <song> [event_chance]
+#   song (required): path to the song file, e.g. "songs/cradles.mp3"
 #   event_chance (optional, 0..1): probability a random battle event fires
 #   (immunity / speed boost). Default 0 = no random events; sudden death at
 #   1:30 is always on as the battle backstop.
-#   e.g. ./scripts/create.sh "songs/Sub Urban - Cradles [NCS Release].mp3"
-#   e.g. ./scripts/create.sh "songs/Sub Urban - Cradles [NCS Release].mp3" 0.5
+#   e.g. ./scripts/create.sh "songs/cradles.mp3"
+#   e.g. ./scripts/create.sh "songs/cradles.mp3" 0.5
 #        -> 50% chance of an event
 #
 #   Render resolution via RES: default 1080x1920 (crisp Full HD - the current
 #   540x960 source was getting upscaled and looked soft after platform
 #   re-encoding). RES=2160x3840 for 4K (much slower, bigger files).
 #
-#   Song selection via SONG: default songs/MONODY-BIMONTE-REMIX.wav.
-#   e.g. SONG="songs/Spektrem - Shine [NCS Release].mp3" ./scripts/create.sh
+#   Song selection via SONG env instead of the first argument:
+#   e.g. SONG="songs/shine.mp3" ./scripts/create.sh
 #   The song's timeline (output/timelines/<song>.json) drives the energy speed
 #   ramp and drop detection - run analysis/analyze.py on it first:
-#     .venv/bin/python analysis/analyze.py "songs/Spektrem - Shine [NCS Release].mp3" \
-#         --out output/timelines/Spektrem-Shine-NCS-Release.json
+#     .venv/bin/python analysis/analyze.py "songs/shine.mp3" \
+#         --out output/timelines/shine.json
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-# Song: first argument (or SONG env, or the default MONODY track).
+# Song is required (first argument or SONG env) - the script never guesses one.
+SONG="${1:-${SONG:-}}"
+if [ -z "$SONG" ]; then
+  echo "usage: ./scripts/create.sh <song> [event_chance]"
+  echo "  e.g. ./scripts/create.sh \"songs/cradles.mp3\""
+  exit 1
+fi
 # event_chance: second argument (or EVENT_CHANCE env, default 0 = none).
-SONG="${1:-${SONG:-$ROOT/songs/MONODY-BIMONTE-REMIX.wav}}"
 EVENT_CHANCE="${2:-${EVENT_CHANCE:-0}}"
 RES="${RES:-1080x1920}"
+BALLS="${BALLS:-5}"
+MIN_DURATION="${MIN_DURATION:-45}"
 SONG_BASE="$(basename "$SONG")"
 # Clean song name for the timeline + publish folder: strip the extension and
-# turn spaces/brackets into dashes. e.g. "Spektrem - Shine [NCS Release].mp3"
-# -> "Spektrem-Shine-NCS-Release".
+# turn spaces/brackets into dashes. e.g. "shine.mp3" -> "shine".
 SONG_NAME="$(printf '%s' "${SONG_BASE%.*}" | tr -cs '[:alnum:]' '-')"
 SONG_NAME="${SONG_NAME%%-}"
 
@@ -76,7 +82,7 @@ TIMELINE_ARGS=()
 if [ -f "$TIMELINE" ]; then
   TIMELINE_ARGS=(--timeline "$TIMELINE")
 fi
-.venv/bin/python simulation/simulate.py --balls 5 --min-duration 45 \
+.venv/bin/python simulation/simulate.py --balls "$BALLS" --min-duration "$MIN_DURATION" \
   --event-chance "$EVENT_CHANCE" "${TIMELINE_ARGS[@]}" --out "$EVENTS"
 
 echo "== rendering at ${RES} (a window flashes; length = battle length) =="

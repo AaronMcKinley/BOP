@@ -5,9 +5,9 @@ platform-native 1080x1920, encode as H.264/AAC, and mux the song. Full
 platform presets and loudness normalization come later.
 
 Usage:
-  python postprocess/mux.py --video output/renders/r3_ring.avi \
-      --audio "songs/MONODY-BIMONTE-REMIX.wav" \
-      --out output/renders/r3_ring.mp4
+  python postprocess/mux.py --video output/renders/current.avi \
+      --audio "songs/<song>.mp3" \
+      --out output/renders/current.mp4
 """
 
 import argparse

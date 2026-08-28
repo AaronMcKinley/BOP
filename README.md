@@ -8,7 +8,7 @@ A circular neon arena, colored balls with lifelines, bouncing and colliding unti
 
 ### Create a battle — `./scripts/create.sh`
 
-Runs everything with no arguments, then opens the result:
+Pass the song file — e.g. `./scripts/create.sh "songs/cradles.mp3"` — it renders the battle and opens the result:
 
 1. **`simulate.py`** — deterministic physics battle on a fresh random seed (skips seeds already used, re-rolls until ≥ 45 s). Writes `output/events/current.json`.
 2. **Godot** (`render.gd`, Movie Maker mode) — plays `current.json` frame-by-frame → `output/renders/current.avi`. A window flashes during this; Movie Maker needs a real display.
@@ -75,10 +75,10 @@ Each stage also runs standalone:
 
 ```bash
 .venv/bin/python simulation/simulate.py --seed 123 --balls 5 --out output/events/x.json
-flatpak run org.godotengine.Godot --path render --resolution 540x960 \
+flatpak run org.godotengine.Godot --path render --resolution 1080x1920 \
   --write-movie out.avi --fixed-fps 60 -- --events output/events/x.json
 .venv/bin/python postprocess/mux.py --video out.avi \
-  --audio songs/MONODY-BIMONTE-REMIX.wav --out out.mp4
+  --audio songs/monody.wav --out out.mp4
 ```
 
 ## Data contracts
